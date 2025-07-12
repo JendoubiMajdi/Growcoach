@@ -2,25 +2,51 @@
 Company routes for GrowCoach application
 """
 from flask import Blueprint, jsonify, request, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
+from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash
 from bson import ObjectId
 from datetime import datetime
 import logging
 import os
+import re
 
-from app import mongo, limiter
-from app.models import Company, Job
-from app.utils.helpers import (
-    allowed_file, sanitize_input, success_response, error_response,
-    validate_required_fields, generate_filename
-)
+from app import mongo
+from app.utils.helpers import success_response, error_response
+
+def validate_required_fields(data, required_fields):
+    """
+    Checks if all required fields are present and not empty in the data.
+    Returns (True, "") if valid, otherwise (False, error_message).
+    """
+    for field in required_fields:
+        if not data.get(field):
+            return False, f"Le champ {field.replace('_', ' ')} est requis."
+    return True, ""
+
+def allowed_file(filename, allowed_extensions={'png', 'jpg', 'jpeg', 'gif'}):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
+
+def generate_filename(filename, prefix=""):
+    """
+    Generate a secure and unique filename for uploaded files.
+    """
+    from werkzeug.utils import secure_filename
+    import time
+    name = secure_filename(filename)
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+    return f"{prefix}{timestamp}_{name}"
+
+# Simple sanitize_input implementation if not already defined elsewhere
+def sanitize_input(data):
+    if isinstance(data, dict):
+        return {k: sanitize_input(v) for k, v in data.items()}
+    elif isinstance(data, str):
+        return data.strip()
+    else:
+        return data
 
 company_bp = Blueprint('company', __name__)
-
-# Initialize models
-company_model = Company(mongo)
-job_model = Job(mongo)
 
 @company_bp.route('/profile', methods=['GET'])
 @jwt_required()
@@ -28,7 +54,7 @@ def get_company_profile():
     """Get company profile"""
     try:
         current_user_id = get_jwt_identity()
-        company = company_model.find_by_id(current_user_id)
+        company = mongo.db.companies.find_one({"_id": ObjectId(current_user_id)})
         
         if not company:
             return error_response("Entreprise non trouvée.", 404)
@@ -48,7 +74,6 @@ def get_company_profile():
 
 @company_bp.route('/update', methods=['PUT'])
 @jwt_required()
-@limiter.limit("10 per minute")
 def update_company_profile():
     """Update company profile"""
     try:
@@ -86,13 +111,16 @@ def update_company_profile():
         data.pop('updated_at', None)
         
         # Update company
-        update_result = company_model.update_profile(current_user_id, data)
+        update_result = mongo.db.companies.update_one(
+            {'_id': ObjectId(current_user_id)},
+            {'$set': data}
+        )
         
-        if not update_result:
+        if update_result.modified_count == 0:
             return error_response("Échec de la mise à jour du profil.", 500)
         
         # Fetch the updated company data
-        updated_company = company_model.find_by_id(current_user_id)
+        updated_company = mongo.db.companies.find_one({"_id": ObjectId(current_user_id)})
         if not updated_company:
             return error_response("Erreur lors de la récupération du profil mis à jour.", 500)
         
@@ -185,7 +213,7 @@ def request_verification():
     try:
         user_id = get_jwt_identity()
         
-        company = company_model.find_by_id(user_id)
+        company = mongo.db.companies.find_one({"_id": ObjectId(user_id)})
         if not company:
             return error_response("Entreprise non trouvée.", 404)
 
@@ -254,7 +282,6 @@ def get_company_jobs():
 
 @company_bp.route('/jobs', methods=['POST'])
 @jwt_required()
-@limiter.limit("5 per minute")
 def create_job():
     """Create a new job posting"""
     try:
@@ -292,10 +319,10 @@ def create_job():
             'applicants': []
         }
 
-        job = job_model.create(job_data)
+        job = mongo.db.jobs.insert_one(job_data)
         
         return success_response("Offre créée avec succès", {
-            "job_id": job['_id']
+            "job_id": str(job.inserted_id)
         }, 201)
 
     except Exception as e:
@@ -501,3 +528,124 @@ def get_job_applicants(job_id):
     except Exception as e:
         logging.error(f"Error getting job applicants: {str(e)}")
         return error_response("Erreur lors de la récupération des candidatures.", 500)
+
+@company_bp.route('/signup', methods=['POST'])
+def company_signup():
+    """Company signup route"""
+    try:
+        data = request.form
+
+        required_fields = ['company_name', 'email', 'password', 'confirm_password', 'industry']
+        for field in required_fields:
+            if not data.get(field):
+                return error_response(f"{field.replace('_', ' ').capitalize()} est requis(e)", 400)
+
+        # Email format validation
+        email = data['email']
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            return error_response("Format d'e-mail invalide", 400)
+
+        # Password strength validation
+        password = data['password']
+        if len(password) < 8:
+            return error_response("Le mot de passe doit contenir au moins 8 caractères.", 400)
+        if password != data['confirm_password']:
+            return error_response("Les mots de passe ne correspondent pas.", 400)
+
+        # Unique email check (candidates & companies)
+        if mongo.db.companies.find_one({'email': email}) or mongo.db.candidates.find_one({'email': email}):
+            return error_response("E-mail déjà enregistré.", 400)
+
+        # Check file extension function
+        def allowed_file(filename):
+            allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
+            return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
+
+        # Check if logo file is present (optional)
+        logo_filename = None
+        if 'logo' in request.files:
+            logo = request.files['logo']
+            if logo.filename != '':
+                if not allowed_file(logo.filename):
+                    return error_response("Type de fichier invalide pour le logo.", 400)
+                
+                logo_filename = secure_filename(f"logo_{datetime.now().strftime('%Y%m%d%H%M%S')}_{logo.filename}")
+                upload_folder = os.path.join(os.getcwd(), 'uploads')
+                os.makedirs(upload_folder, exist_ok=True)
+                logo.save(os.path.join(upload_folder, logo_filename))
+
+        # Create company document
+        company = {
+            'company_name': data['company_name'],
+            'email': data['email'],
+            'password': generate_password_hash(data['password']),
+            'phone': data.get('phone', ''),
+            'location': data.get('location', ''),
+            'website': data.get('website', ''),
+            'description': data.get('description', ''),
+            'industry': data['industry'],
+            'company_size': data.get('company_size', ''),
+            'founded_year': data.get('founded_year', ''),
+            'terms_accepted': True if data.get('terms_accepted', '').lower() == 'true' else False,
+            'logo': logo_filename,
+            'status': 'pending',  # Pending admin approval
+            'created_at': datetime.now(),
+            'updated_at': datetime.now(),
+            'jobs_posted': [],
+            'verified': False
+        }
+        
+        # Insert into database
+        result = mongo.db.companies.insert_one(company)
+        
+        # Generate JWT token for the new company
+        access_token = create_access_token(
+            identity=str(result.inserted_id),
+            additional_claims={"user_type": "company"}
+        )
+
+        # Create admin notification
+        notification = {
+            "text": f"Nouvelle inscription d'entreprise: {company['company_name']}",
+            "time": datetime.now(),
+            "unread": True,
+            "type": "company_registration",
+            "company_id": str(result.inserted_id),
+            "company_name": company['company_name']
+        }
+        mongo.db.admin_notifications.insert_one(notification)
+
+        response_data = {
+            "status": "pending",
+            "token": access_token,
+            "company_id": str(result.inserted_id),
+            "company_name": company['company_name'],
+            "email": company['email'],
+            "user_type": "company"
+        }
+
+        if logo_filename:
+            response_data["logo_url"] = f"http://localhost:5000/uploads/{logo_filename}"
+
+        return success_response("Entreprise enregistrée avec succès. Votre compte est en attente d'approbation.", response_data, 201)
+        
+    except Exception as e:
+        logging.error(f"Error in company_signup: {str(e)}")
+        return error_response("Une erreur inattendue s'est produite lors de l'inscription.", 500)
+
+    # Alternative approach in handleSubmit:
+    # The following block is JavaScript/TypeScript and should not be in a Python file.
+    # if (result.success) {
+    #   // Store token and user info
+    #   localStorage.setItem('authToken', result.data.token);
+    #   localStorage.setItem('userType', result.data.user_type);
+    #   localStorage.setItem('userId', result.data.company_id);
+    #   
+    #   // Show success message
+    #   alert('Inscription réussie ! Votre compte est en attente d\'approbation par un administrateur.');
+    #   
+    #   // Redirect to login page instead
+    #   navigate('/login?message=company_registration_success');
+    # } else {
+    #   setErrors({ form: result.error || 'Échec de l\'inscription. Veuillez réessayer.' });
+    # }

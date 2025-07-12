@@ -10,7 +10,7 @@ from typing import Dict, Any, Union, List
 from bleach import clean
 from werkzeug.utils import secure_filename
 from pathlib import Path
-from flask import current_app
+from flask import current_app, jsonify
 
 def allowed_file(filename: str, allowed_extensions: set = None) -> bool:
     """Check if the uploaded file has an allowed extension"""
@@ -160,17 +160,14 @@ def calculate_profile_completion(candidate: Dict[str, Any]) -> int:
     
     return int((completed_fields / total_fields) * 100)
 
-def success_response(message: str, data: Any = None, status_code: int = 200) -> tuple:
-    """Create a standardized success response"""
+def success_response(message, data=None, status_code=200):
+    """Standard success response format"""
     response = {
         "success": True,
         "message": message
     }
-    
-    if data is not None:
+    if data:
         response["data"] = data
-    
-    from flask import jsonify
     return jsonify(response), status_code
 
 def error_response(message: str, status_code: int = 400, error_code: str = None) -> tuple:

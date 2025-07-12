@@ -167,9 +167,20 @@ def get_admin_notifications():
     if jwt_data.get('user_type') != 'admin':
         return jsonify({"error": "Unauthorized"}), 403
 
-    notifications = list(mongo.db.admin_notifications.find().sort("time", -1))
+    # Only return untreated notifications (not approved or rejected)
+    notifications = list(mongo.db.admin_notifications.find({
+        "$or": [
+            {"status": {"$exists": False}},  # Old notifications without status
+            {"status": {"$nin": ["approved", "rejected"]}}  # New notifications that aren't processed
+        ]
+    }).sort("time", -1))
+    
     for n in notifications:
         n['_id'] = str(n['_id'])
+        # Mark as unread if not specified
+        if 'unread' not in n:
+            n['unread'] = True
+    
     return jsonify(notifications), 200
 
 @admin_bp.route('/users/<user_id>', methods=['DELETE'])
@@ -326,6 +337,8 @@ def upload_candidate_admin_cv(candidate_id):
         logging.error(f"Error in upload_candidate_admin_cv: {str(e)}")
         return jsonify({"error": "Une erreur inattendue s'est produite."}), 500
 
+# Replace the existing notification approval/rejection endpoints with these fixed versions:
+
 @admin_bp.route('/notifications/<notification_id>/approve', methods=['PUT'])
 @jwt_required()
 def approve_notification(notification_id):
@@ -342,8 +355,7 @@ def approve_notification(notification_id):
         # Handle different notification types
         notification_type = notification.get('type', '')
         
-        if notification_type == 'candidate_registration':
-            # Approve candidate
+        if notification_type in ['candidate_registration', 'new_candidate']:
             candidate_id = notification.get('candidate_id')
             if candidate_id:
                 result = mongo.db.candidates.update_one(
@@ -351,21 +363,18 @@ def approve_notification(notification_id):
                     {"$set": {"status": "active", "updated_at": datetime.now()}}
                 )
                 if result.modified_count:
-                    # Mark notification as approved
-                    mongo.db.admin_notifications.update_one(
-                        {"_id": ObjectId(notification_id)},
-                        {"$set": {"status": "approved", "approved_at": datetime.now(), "updated_at": datetime.now()}}
-                    )
+                    # Delete notification after approval
+                    mongo.db.admin_notifications.delete_one({"_id": ObjectId(notification_id)})
                     return jsonify({
                         "success": True,
                         "message": "Candidat approuvé avec succès",
-                        "notification_id": notification_id
+                        "notification_id": notification_id,
+                        "action": "approved"
                     }), 200
                 else:
                     return jsonify({"error": "Candidat non trouvé."}), 404
         
         elif notification_type == 'company_registration':
-            # Approve company
             company_id = notification.get('company_id')
             if company_id:
                 result = mongo.db.companies.update_one(
@@ -373,29 +382,25 @@ def approve_notification(notification_id):
                     {"$set": {"status": "active", "verified": True, "updated_at": datetime.now()}}
                 )
                 if result.modified_count:
-                    # Mark notification as approved
-                    mongo.db.admin_notifications.update_one(
-                        {"_id": ObjectId(notification_id)},
-                        {"$set": {"status": "approved", "approved_at": datetime.now(), "updated_at": datetime.now()}}
-                    )
+                    # Delete notification after approval
+                    mongo.db.admin_notifications.delete_one({"_id": ObjectId(notification_id)})
                     return jsonify({
                         "success": True,
                         "message": "Entreprise approuvée avec succès",
-                        "notification_id": notification_id
+                        "notification_id": notification_id,
+                        "action": "approved"
                     }), 200
                 else:
                     return jsonify({"error": "Entreprise non trouvée."}), 404
         
         else:
-            # Generic approval for other notification types
-            mongo.db.admin_notifications.update_one(
-                {"_id": ObjectId(notification_id)},
-                {"$set": {"status": "approved", "approved_at": datetime.now(), "updated_at": datetime.now()}}
-            )
+            # Generic approval - just remove the notification
+            mongo.db.admin_notifications.delete_one({"_id": ObjectId(notification_id)})
             return jsonify({
                 "success": True,
                 "message": "Notification approuvée avec succès",
-                "notification_id": notification_id
+                "notification_id": notification_id,
+                "action": "approved"
             }), 200
         
     except Exception as e:
@@ -418,8 +423,7 @@ def reject_notification(notification_id):
         # Handle different notification types
         notification_type = notification.get('type', '')
         
-        if notification_type == 'candidate_registration':
-            # Reject candidate
+        if notification_type in ['candidate_registration', 'new_candidate']:
             candidate_id = notification.get('candidate_id')
             if candidate_id:
                 mongo.db.candidates.update_one(
@@ -428,7 +432,6 @@ def reject_notification(notification_id):
                 )
         
         elif notification_type == 'company_registration':
-            # Reject company
             company_id = notification.get('company_id')
             if company_id:
                 mongo.db.companies.update_one(
@@ -436,22 +439,20 @@ def reject_notification(notification_id):
                     {"$set": {"status": "rejected", "verified": False, "updated_at": datetime.now()}}
                 )
         
-        # Mark notification as rejected
-        mongo.db.admin_notifications.update_one(
-            {"_id": ObjectId(notification_id)},
-            {"$set": {"status": "rejected", "rejected_at": datetime.now(), "updated_at": datetime.now()}}
-        )
+        # Delete notification after rejection
+        mongo.db.admin_notifications.delete_one({"_id": ObjectId(notification_id)})
         
         return jsonify({
             "success": True,
             "message": "Notification rejetée avec succès",
-            "notification_id": notification_id
+            "notification_id": notification_id,
+            "action": "rejected"
         }), 200
         
     except Exception as e:
         logging.error(f"Error rejecting notification: {str(e)}")
         return jsonify({"error": "Une erreur inattendue s'est produite."}), 500
-
+    
 @admin_bp.route('/notifications/<notification_id>/mark-read', methods=['PUT'])
 @jwt_required()
 def mark_notification_read(notification_id):
@@ -662,4 +663,43 @@ def bulk_reject_notifications():
         
     except Exception as e:
         logging.error(f"Error in bulk reject notifications: {str(e)}")
+        return jsonify({"error": "Une erreur inattendue s'est produite."}), 500
+
+@admin_bp.route('/candidates/<candidate_id>/approve', methods=['POST'])
+@jwt_required()
+def approve_candidate(candidate_id):
+    """Approve a candidate registration"""
+    try:
+        jwt_data = get_jwt()
+        if jwt_data.get('user_type') != 'admin':
+            return jsonify({"error": "Unauthorized"}), 403
+
+        candidate = mongo.db.candidates.find_one({"_id": ObjectId(candidate_id)})
+        if not candidate:
+            return jsonify({"error": "Candidat non trouvé."}), 404
+
+        # Update candidate status to active
+        result = mongo.db.candidates.update_one(
+            {"_id": ObjectId(candidate_id)},
+            {"$set": {"status": "active", "updated_at": datetime.now()}}
+        )
+
+        if result.modified_count:
+            # Remove any related notifications
+            mongo.db.admin_notifications.delete_many({
+                "candidate_id": candidate_id,
+                "type": {"$in": ["new_candidate", "candidate_registration"]}
+            })
+            
+            return jsonify({
+                "success": True,
+                "message": "Candidat approuvé avec succès",
+                "candidate_id": candidate_id,
+                "status": "active"
+            }), 200
+        else:
+            return jsonify({"error": "Erreur lors de l'approbation du candidat."}), 500
+
+    except Exception as e:
+        logging.error(f"Error in approve_candidate: {str(e)}")
         return jsonify({"error": "Une erreur inattendue s'est produite."}), 500

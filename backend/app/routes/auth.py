@@ -11,6 +11,8 @@ import logging
 import re
 import random
 import secrets
+import requests
+import os
 
 from app import mongo, limiter, mail, oauth
 from app.models import Candidate, Company, Admin, PasswordResetCode
@@ -351,51 +353,24 @@ def oauth_login(provider):
         logging.error(f"OAuth login error: {e}")
         return error_response("Erreur lors de l'authentification OAuth.", 500)
 
-@auth_bp.route('/oauth/<provider>/callback')
+@auth_bp.route('/<provider>/callback')
 def oauth_callback(provider):
-    """Handle OAuth callback"""
+    """Handle OAuth callback and create/login user"""
     try:
         if provider == 'google':
-            setup_oauth()
-            token = google.authorize_access_token()
-            user_info = token.get('userinfo')
-            
-            if user_info:
-                email = user_info['email']
-                
-                # Check if user exists
-                user = candidate_model.find_by_email(email)
-                if not user:
-                    # Create new candidate
-                    user_data = {
-                        'first_name': user_info.get('given_name', ''),
-                        'last_name': user_info.get('family_name', ''),
-                        'email': email,
-                        'password': generate_password_hash(secrets.token_urlsafe(32)),
-                        'phone': '',
-                        'location': '',
-                        'bio': '',
-                        'skills': [],
-                        'terms_accepted': True,
-                        'avatar': user_info.get('picture'),
-                        'resume': None,
-                        'oauth_provider': 'google',
-                        'oauth_id': user_info['sub']
-                    }
-                    user = candidate_model.create(user_data)
-                
-                # Create access token
-                access_token = create_access_token(identity=str(user['_id']))
-                
-                # Redirect to frontend with token
-                frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:3000')
-                return redirect(f"{frontend_url}/oauth-success?token={access_token}")
-        
-        return error_response("Échec de l'authentification OAuth.", 400)
-        
+            # This would require proper OAuth setup with authlib
+            # For now, just return an error
+            return error_response("OAuth not configured", 400)
+        else:
+            return error_response("Provider not supported. Only Google OAuth is available.", 400)
+
+        # The rest of your OAuth logic would go here
+        # But it requires proper OAuth library setup
+
     except Exception as e:
-        logging.error(f"OAuth callback error: {e}")
-        return error_response("Erreur lors du callback OAuth.", 500)
+        print(f"OAuth callback error: {str(e)}")
+        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        return redirect(f"{frontend_url}/login?error=oauth_failed")
 
 @auth_bp.route('/verify-token', methods=['GET'])
 @jwt_required()

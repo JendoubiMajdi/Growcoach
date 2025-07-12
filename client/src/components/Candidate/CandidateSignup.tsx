@@ -41,10 +41,11 @@ const CandidateSignup: React.FC = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [showModal, setShowModal] = useState(false);
-  const [hasGrowCoach, setHasGrowCoach] = useState<boolean | null>(null);
- const [selectedFormations, setSelectedFormations] = useState<string[]>([]);
- const [otherFormation, setOtherFormation] = useState('');
+const [showModal, setShowModal] = useState(false);
+const [hasGrowCoach, setHasGrowCoach] = useState<boolean | null>(null);
+const [selectedFormations, setSelectedFormations] = useState<string[]>([]);
+const [otherFormation, setOtherFormation] = useState('');
+const [loading, setLoading] = useState(false);
 
   const formationsList = [
     '5S et le Management Visuel',
@@ -323,112 +324,112 @@ const CandidateSignup: React.FC = () => {
     setShowModal(true);
   };
 
-  const submitFinalForm = async (hasFormation: boolean) => {
-    setShowModal(false);
-    setHasGrowCoach(hasFormation);
-    setIsSubmitting(true);
-  
-    try {
-      const formDataToSend = new FormData();
-      
-      formDataToSend.append('first_name', formData.first_name);
-      formDataToSend.append('last_name', formData.last_name);
-      formDataToSend.append('email', formData.email);
-      formDataToSend.append('password', formData.password);
-      formDataToSend.append('confirm_password', formData.confirm_password);
-      formDataToSend.append('phone', formData.phone);
-      formDataToSend.append('location', formData.location);
-      formDataToSend.append('bio', formData.bio);
-      formDataToSend.append('terms_accepted', formData.terms_accepted.toString());
-      formDataToSend.append('skills', formData.skills.join(','));
-      formDataToSend.append('has_growcoach_formation', String(hasFormation));
-
-let formationsToSend = selectedFormations;
-if (formationsToSend.includes('Autre') && otherFormation.trim()) {
-  formationsToSend = formationsToSend.map(f =>
-    f === 'Autre' ? otherFormation.trim() : f
-  );
-}
-if (hasFormation && formationsToSend.length > 0) {
-  formationsToSend.forEach(f => formDataToSend.append('growcoach_formation', f));
-}
-      
-      if (formData.avatar && formData.avatar instanceof File) {
-        formDataToSend.append('avatar', formData.avatar, formData.avatar.name);
-      }
-      if (formData.resume && formData.resume instanceof File) {
-        formDataToSend.append('resume', formData.resume, formData.resume.name);
-      }
-      
-      formData.education.forEach((edu, index) => {
-        formDataToSend.append(`education[${index}][school]`, edu.school);
-        formDataToSend.append(`education[${index}][degree]`, edu.degree);
-        formDataToSend.append(`education[${index}][start_date]`, edu.start_date);
-        if (edu.end_date) {
-          formDataToSend.append(`education[${index}][end_date]`, edu.end_date);
-        }
-        formDataToSend.append(`education[${index}][description]`, edu.description || '');
-      });
-      formDataToSend.append('education_count', formData.education.length.toString());
-      
-      formData.experience.forEach((exp, index) => {
-        formDataToSend.append(`experience[${index}][title]`, exp.title);
-        formDataToSend.append(`experience[${index}][company]`, exp.company);
-        formDataToSend.append(`experience[${index}][start_date]`, exp.start_date);
-        if (exp.end_date) {
-          formDataToSend.append(`experience[${index}][end_date]`, exp.end_date);
-        }
-        formDataToSend.append(`experience[${index}][description]`, exp.description || '');
-      });
-      formDataToSend.append('experience_count', formData.experience.length.toString());
-      
-      formData.professional_formation.forEach((formation, index) => {
-        formDataToSend.append(`professional_formation[${index}][title]`, formation.title);
-        formDataToSend.append(`professional_formation[${index}][institution]`, formation.institution);
-        formDataToSend.append(`professional_formation[${index}][start_date]`, formation.start_date);
-        if (formation.end_date) {
-          formDataToSend.append(`professional_formation[${index}][end_date]`, formation.end_date);
-        }
-        formDataToSend.append(`professional_formation[${index}][description]`, formation.description || '');
-      });
-      formDataToSend.append('professional_formation_count', formData.professional_formation.length.toString());
-      
-      formData.projects.forEach((project, index) => {
-        formDataToSend.append(`projects[${index}][name]`, project.name);
-        formDataToSend.append(`projects[${index}][description]`, project.description);
-        if (project.link) {
-          formDataToSend.append(`projects[${index}][link]`, project.link);
-        }
-      });
-      formDataToSend.append('projects_count', formData.projects.length.toString());
-      
-      const response = await fetch('http://localhost:5000/candidate/signup', {
-        method: 'POST',
-        body: formDataToSend,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        setErrors({ form: errorData.error || 'Échec de l’inscription. Veuillez réessayer.' });
-        return;
-      }
-
-      const data = await response.json();
-      // Store token and user info
-      localStorage.setItem('authToken', data.token);
-      localStorage.setItem('userType', data.user_type);
-      localStorage.setItem('userId', data.user_id);
-      // Redirect to dashboard
-      navigate('/candidate-dashboard');
-      
-    } catch (error) {
-      setErrors({ 
-        form: error instanceof Error ? error.message : 'Signup failed. Please try again.'
-      });
-    } finally {
-      setIsSubmitting(false);
+// Check if you have the right variable names in your form data
+const submitFinalForm = async () => {
+  try {
+    setLoading(true);
+    
+    const formDataToSend = new FormData();
+    
+    // Make sure these match your actual form state variable names
+    formDataToSend.append('first_name', formData.first_name);
+    formDataToSend.append('last_name', formData.last_name);
+    formDataToSend.append('email', formData.email);
+    formDataToSend.append('password', formData.password);
+    formDataToSend.append('confirm_password', formData.password);
+    
+    // Add all form fields from your existing formData state
+    formDataToSend.append('phone', formData.phone || '');
+    formDataToSend.append('location', formData.location || '');
+    formDataToSend.append('bio', formData.bio || '');
+    formDataToSend.append('skills', formData.skills?.join(',') || '');
+    formDataToSend.append('terms_accepted', 'true');
+    
+    // Add files (these should be File objects from your form state)
+    if (formData.avatar) {
+      formDataToSend.append('avatar', formData.avatar);
     }
-  };
+    if (formData.resume) {
+      formDataToSend.append('resume', formData.resume);
+    }
+    
+    // Add education, experience, etc.
+    formDataToSend.append('education_count', formData.education?.length.toString() || '0');
+    formData.education?.forEach((edu, index) => {
+      formDataToSend.append(`education[${index}][school]`, edu.school || '');
+      formDataToSend.append(`education[${index}][degree]`, edu.degree || '');
+      formDataToSend.append(`education[${index}][start_date]`, edu.start_date || '');
+      formDataToSend.append(`education[${index}][end_date]`, edu.end_date || '');
+      formDataToSend.append(`education[${index}][description]`, edu.description || '');
+    });
+    
+    // Add experience
+    formDataToSend.append('experience_count', formData.experience?.length.toString() || '0');
+    formData.experience?.forEach((exp, index) => {
+      formDataToSend.append(`experience[${index}][title]`, exp.title || '');
+      formDataToSend.append(`experience[${index}][company]`, exp.company || '');
+      formDataToSend.append(`experience[${index}][start_date]`, exp.start_date || '');
+      formDataToSend.append(`experience[${index}][end_date]`, exp.end_date || '');
+      formDataToSend.append(`experience[${index}][description]`, exp.description || '');
+    });
+    
+    // Add professional formation
+    formDataToSend.append('professional_formation_count', formData.professional_formation?.length.toString() || '0');
+    formData.professional_formation?.forEach((pf, index) => {
+      formDataToSend.append(`professional_formation[${index}][title]`, pf.title || '');
+      formDataToSend.append(`professional_formation[${index}][institution]`, pf.institution || '');
+      formDataToSend.append(`professional_formation[${index}][start_date]`, pf.start_date || '');
+      formDataToSend.append(`professional_formation[${index}][end_date]`, pf.end_date || '');
+      formDataToSend.append(`professional_formation[${index}][description]`, pf.description || '');
+    });
+    
+    // Add projects
+    formDataToSend.append('projects_count', formData.projects?.length.toString() || '0');
+    formData.projects?.forEach((project, index) => {
+      formDataToSend.append(`projects[${index}][name]`, project.name || '');
+      formDataToSend.append(`projects[${index}][description]`, project.description || '');
+      formDataToSend.append(`projects[${index}][link]`, project.link || '');
+    });
+
+    console.log('Submitting registration data to /candidate/signup');
+
+    // Use the new candidate signup endpoint
+    const response = await fetch('http://localhost:5000/candidate/signup', {
+      method: 'POST',
+      body: formDataToSend, // Send as FormData, not JSON
+    });
+
+    const result = await response.json();
+    console.log('Registration response:', result);
+
+    if (response.ok && result.success) {
+      // Registration successful
+      if (result.data && result.data.token) {
+        // Store the auth token
+        localStorage.setItem('authToken', result.data.token);
+        
+        // Show success message
+        alert('Inscription réussie ! Bienvenue sur GrowCoach.');
+        
+        // Fix: Change to match the route in App.tsx
+        navigate('/candidate-dashboard');
+      } else {
+        // Registration successful but no token (maybe needs admin approval)
+        alert('Inscription réussie ! Votre compte est en attente d\'approbation.');
+        navigate('/login');
+      }
+    } else {
+      // Registration failed
+      console.error('Registration failed:', result);
+      setErrors({ form: result.error || 'Erreur lors de l\'inscription. Veuillez réessayer.' });
+    }
+  } catch (error) {
+    console.error('Network error during registration:', error);
+    setErrors({ form: 'Erreur de connexion. Veuillez vérifier votre connexion internet et réessayer.' });
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <>
@@ -1021,7 +1022,7 @@ if (hasFormation && formationsToSend.length > 0) {
                   Oui
                 </button>
                 <button
-                  onClick={() => submitFinalForm(false)}
+                  onClick={() => submitFinalForm()}
                   className="px-6 py-2 bg-purple-500 hover:bg-purple- rounded-lg text-black font-medium transition-colors"
                 >
                   Non
@@ -1068,7 +1069,7 @@ if (hasFormation && formationsToSend.length > 0) {
                   </div>
 
                   <button
-                    onClick={() => submitFinalForm(true)}
+                    onClick={() => submitFinalForm()}
                     className="w-full py-2 px-4 bg-purple-600 hover:bg-purple-500 rounded-lg text-white font-medium transition-colors mt-4"
                   >
                     Confirmer et soumettre

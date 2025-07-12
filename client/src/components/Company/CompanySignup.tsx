@@ -116,10 +116,11 @@ const handleSubmit = async (e: React.FormEvent) => {
   try {
     const formDataToSend = new FormData();
 
-    // Append fields
+    // Append all required fields
     formDataToSend.append('company_name', formData.company_name);
     formDataToSend.append('email', formData.email);
     formDataToSend.append('password', formData.password);
+    formDataToSend.append('confirm_password', formData.confirm_password); // Add this line
     formDataToSend.append('phone', formData.phone);
     formDataToSend.append('location', formData.location);
     formDataToSend.append('website', formData.website);
@@ -138,23 +139,32 @@ const handleSubmit = async (e: React.FormEvent) => {
       body: formDataToSend,
     });
 
+    const result = await response.json();
+
     if (!response.ok) {
-      const errorData = await response.json();
-      setErrors({ form: errorData.error || 'Échec de l’inscription. Veuillez réessayer.' });
+      setErrors({ form: result.error || 'Échec de l\'inscription. Veuillez réessayer.' });
       return;
     }
 
-    const data = await response.json();
-    // Store token and user info
-    localStorage.setItem('authToken', data.token);
-    localStorage.setItem('userType', data.user_type);
-    localStorage.setItem('userId', data.company_id);
-    // Redirect to dashboard
-    navigate('/company-dashboard');
+    if (result.success) {
+      // Store token and user info from the nested data object
+      localStorage.setItem('authToken', result.data.token);
+      localStorage.setItem('userType', result.data.user_type);
+      localStorage.setItem('userId', result.data.company_id);
+      
+      // Show success message
+      alert('Inscription réussie ! Votre compte est en attente d\'approbation par un administrateur.');
+      
+      // Redirect to company dashboard (make sure this route exists)
+      navigate('/company-dashboard');
+    } else {
+      setErrors({ form: result.error || 'Échec de l\'inscription. Veuillez réessayer.' });
+    }
 
   } catch (error) {
+    console.error('Error during company signup:', error);
     setErrors({
-      form: error instanceof Error ? error.message : 'Échec de l’inscription. Veuillez réessayer.'
+      form: error instanceof Error ? error.message : 'Échec de l\'inscription. Veuillez réessayer.'
     });
   } finally {
     setIsSubmitting(false);

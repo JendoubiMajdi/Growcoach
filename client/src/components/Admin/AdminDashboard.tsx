@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, User, LogOut, Briefcase, List, FileText, BookOpen, Edit, Users, X, Bell, Check, Shield, File, ChevronRight, Eye, Ban, CheckCircle } from 'lucide-react';
 import Footer from '../Footer';
@@ -52,6 +52,12 @@ const AdminDashboard = () => {
   const [logoutError, setLogoutError] = useState('');
   const [formationFilter, setFormationFilter] = useState<'all' | 'with' | 'without'>('all');
   const [currentPage, setCurrentPage] = useState(1);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<ReturnType<typeof setInterval> | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const usersPerPage = 8;
 
@@ -59,47 +65,49 @@ const AdminDashboard = () => {
     return users.map(user => ({
       _id: user._id || '',
       name: user.name || 'Inconnu',
-      email: user.email || 'Pas d’email',
+      email: user.email || 'Pas d\'email',
       type: ['candidate', 'company'].includes(user.type) ? user.type : 'candidate',
-      status: ['active', 'blocked', 'pending'].includes(user.status) ? user.status : 'active',
+      status: ['active', 'blocked', 'pending'].includes(user.status) ? user.status : 'pending', // Default to pending
       verified: user.type === 'company' ? !!user.verified : undefined,
       created_at: user.created_at || new Date().toISOString(),
       CV: user.CV,
       logo: user.logo,
       photo: user.photo,
-      adminCV: user.adminCV , 
+      adminCV: user.adminCV,
       has_growcoach_formation: user.has_growcoach_formation ?? false,
       formation_name: user.formation_name || '',
-
     }));
   };
 
-  const handleCandidateApproval = async (candidateId: string) => {    try {
-    const response = await fetch(`${API_BASE_URL}/admin/candidates/${candidateId}/approve`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-      },
-      credentials: 'include'
-    });
+  const handleCandidateApproval = async (candidateId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/candidates/${candidateId}/approve`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        },
+        credentials: 'include'
+      });
 
-    if (!response.ok) throw new Error('Échec de l’approbation du candidat');
+      if (!response.ok) throw new Error('Échec de l\'approbation du candidat');
 
-    setUsers(users.map((user: User): User => 
-      user._id === candidateId ? { ...user, status: 'active' } : user
-    ));
+      // Update users list
+      setUsers(users.map((user: User): User => 
+        user._id === candidateId ? { ...user, status: 'active' } : user
+      ));
 
-    if (selectedUser?._id === candidateId) {
-      setSelectedUser({ ...selectedUser, status: 'active' });
+      // Update selected user in modal
+      if (selectedUser?._id === candidateId) {
+        setSelectedUser({ ...selectedUser, status: 'active' });
+      }
+
+      return true;
+    } catch (err) {
+      console.error("Erreur lors de l'approbation du candidat :", err);
+      setError(err instanceof Error ? err.message : 'Échec de l\'approbation du candidat');
+      return false;
     }
-
-    return true;
-  } catch (err) {
-    console.error("Erreur lors de l’approbation du candidat :", err);
-    setError(err instanceof Error ? err.message : 'Échec de l’approbation du candidat');
-    return false;
-  }
-};
+  };
 
 
   const fetchUsers = async () => {
@@ -132,27 +140,45 @@ const AdminDashboard = () => {
     }
   };
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async (showRefreshing = false) => {
     try {
+      if (showRefreshing) setIsRefreshing(true);
+      
       const response = await fetch(`${API_BASE_URL}/admin/notifications`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
         },
         credentials: 'include'
       });
+      
       if (response.ok) {
         const data = await response.json();
         setNotifications(data);
+        setLastRefresh(new Date());
       }
     } catch (err) {
       console.error("Erreur lors du chargement des notifications :", err);
+    } finally {
+      if (showRefreshing) setIsRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchUsers();
-    fetchNotifications();
-  }, [navigate]);
+    fetchNotifications(true);
+
+    // Set up auto-refresh for notifications every 30 seconds
+    const interval = setInterval(() => {
+      fetchNotifications(false);
+    }, 30000); // 30 seconds
+
+    setAutoRefreshInterval(interval);
+
+    // Cleanup on unmount
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [fetchNotifications]);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -232,10 +258,12 @@ const AdminDashboard = () => {
 
       const updatedUser = await response.json();
 
+      // Update users list
       setUsers(users.map(user =>
         user._id === candidateId ? { ...user, status: updatedUser.status } : user
       ));
 
+      // Update selected user in modal
       if (selectedUser?._id === candidateId) {
         setSelectedUser({ ...selectedUser, status: updatedUser.status });
       }
@@ -264,6 +292,7 @@ const AdminDashboard = () => {
 
       const updatedUser = await response.json();
 
+      // Update users list
       setUsers(users.map(user =>
         user._id === companyId ? {
           ...user,
@@ -272,6 +301,7 @@ const AdminDashboard = () => {
         } : user
       ));
 
+      // Update selected user in modal
       if (selectedUser?._id === companyId) {
         setSelectedUser({
           ...selectedUser,
@@ -289,7 +319,8 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!window.confirm("Voulez-vous vraiment supprimer cet utilisateur ?")) return;
+    setIsDeleting(true);
+    
     try {
       const res = await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
         method: 'DELETE',
@@ -297,16 +328,39 @@ const AdminDashboard = () => {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
         },
       });
+      
       const data = await res.json();
+      
       if (res.ok) {
+        // Remove user from the users list
         setUsers(users.filter(u => u._id !== userId));
+        
+        // Close all modals
         setIsUserDetailsOpen(false);
+        setShowDeleteConfirm(false);
+        setUserToDelete(null);
+        
+        // Show success message
+        alert(data.message || 'Utilisateur supprimé avec succès');
       } else {
         alert(data.error || "Erreur lors de la suppression");
       }
     } catch (err) {
-      alert("Erreur lors de la suppression");
+      console.error('Error deleting user:', err);
+      alert("Erreur lors de la suppression de l'utilisateur");
+    } finally {
+      setIsDeleting(false);
     }
+  };
+
+  const openDeleteConfirm = (user: User) => {
+    setUserToDelete(user);
+    setShowDeleteConfirm(true);
+  };
+
+  const closeDeleteConfirm = () => {
+    setShowDeleteConfirm(false);
+    setUserToDelete(null);
   };
 
   const paginatedUsers = filteredUsers.slice(
@@ -328,16 +382,26 @@ const AdminDashboard = () => {
 
       if (response.ok) {
         const result = await response.json();
-        console.log('Notification approved:', result);
-        // Refresh notifications and users
-        await fetchNotifications();
+        
+        // Remove notification from state immediately
+        setNotifications(prev => prev.filter(n => n._id !== notificationId));
+        
+        // Refresh users data
         await fetchUsers();
+        
+        // Force refresh notifications to get updated count
+        setTimeout(() => fetchNotifications(false), 1000);
+        
+        // Show success message
+        alert(result.message || 'Notification approuvée avec succès');
       } else {
         const errorData = await response.json();
         console.error('Failed to approve notification:', errorData);
+        alert(errorData.error || 'Erreur lors de l\'approbation');
       }
     } catch (error) {
       console.error('Error approving notification:', error);
+      alert('Erreur lors de l\'approbation de la notification');
     }
   };
 
@@ -353,18 +417,48 @@ const AdminDashboard = () => {
 
       if (response.ok) {
         const result = await response.json();
-        console.log('Notification rejected:', result);
-        // Refresh notifications and users
-        await fetchNotifications();
+        
+        // Remove notification from state immediately
+        setNotifications(prev => prev.filter(n => n._id !== notificationId));
+        
+        // Refresh users data
         await fetchUsers();
+        
+        // Force refresh notifications to get updated count
+        setTimeout(() => fetchNotifications(false), 1000);
+        
+        // Show success message
+        alert(result.message || 'Notification rejetée avec succès');
       } else {
         const errorData = await response.json();
         console.error('Failed to reject notification:', errorData);
+        alert(errorData.error || 'Erreur lors du rejet');
       }
     } catch (error) {
       console.error('Error rejecting notification:', error);
+      alert('Erreur lors du rejet de la notification');
     }
   };
+
+  useEffect(() => {
+    // Close dropdowns when clicking outside
+    const handleClickOutside = (event: MouseEvent) => {
+      // Close notifications dropdown
+      if (showNotifications && !(event.target as Element).closest('.notification-dropdown')) {
+        setShowNotifications(false);
+      }
+      
+      // Close profile menu dropdown
+      if (showProfileMenu && !(event.target as Element).closest('.profile-menu')) {
+        setShowProfileMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifications, showProfileMenu]);
 
   if (loading) {
     return (
@@ -398,146 +492,111 @@ const AdminDashboard = () => {
                   className="p-2 hover:bg-gray-700 rounded-full relative"
                 >
                   <Bell className="h-5 w-5 text-gray-300" />
-                  {notifications.some(n => n.unread) && (
-                    <span className="absolute top-0 right-0 w-2 h-2 bg-purple-500 rounded-full"></span>
+                  {notifications.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-xs text-white font-bold">
+                      {notifications.length > 9 ? '9+' : notifications.length}
+                    </span>
                   )}
                 </button>
-{showNotifications && (
-  <div className="absolute right-0 mt-2 w-80 bg-gray-800 rounded-lg shadow-lg border border-gray-700 py-2 z-50">
-    <h3 className="px-4 py-2 text-sm font-semibold border-b border-gray-700">Notifications</h3>
-    {notifications.length > 0 ? (
-      notifications
-        .filter(notification => {
-          if (notification.type === 'new_candidate') {
-            const candidateUser = users.find(
-              user => user._id === notification.candidate_id && user.type === 'candidate'
-            );
-            return candidateUser && candidateUser.status === 'pending';
-          }
-          return true;
-        })
-        .map(notification => (
-          <div
-            key={notification._id}
-            className={`px-4 py-3 hover:bg-gray-700 cursor-pointer ${
-              notification.unread ? 'bg-gray-700/50' : ''
-            }`}
-            onClick={async () => {
-              if (notification.type === 'new_candidate') {
-                const candidateUser = users.find(
-                  user => user._id === notification.candidate_id && user.type === 'candidate'
-                );
-                if (candidateUser) {
-                  setSelectedUser(candidateUser);
-                  setIsUserDetailsOpen(true);
-                }
-              }
-              else if (notification.type === 'verification_request') {
-                const companyUser = users.find(
-                  user => user._id === notification.company_id && user.type === 'company'
-                );
-                if (companyUser) {
-                  setSelectedUser(companyUser);
-                  setIsUserDetailsOpen(true);
-                }
-              }
-              
-              // Mark notification as read instead of deleting
-              if (notification.unread) {
-                try {
-                  await fetch(`${API_BASE_URL}/admin/notifications/${notification._id}/mark-read`, {
-                    method: 'PUT',
-                    headers: {
-                      'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-                    },
-                  });
-                  // Update local state
-                  setNotifications(notifications.map(n => 
-                    n._id === notification._id ? { ...n, unread: false } : n
-                  ));
-                } catch (error) {
-                  console.error('Error marking notification as read:', error);
-                }
-              }
-            }}
-          >
-            <p className="text-sm">{notification.text}</p>
-            <p className="text-xs text-gray-400 mt-1">
-              {new Date(notification.time).toLocaleString()}
-            </p>
-            {notification.type === 'new_candidate' && (
-              <div className="mt-2 flex gap-2 justify-end">
-                <button
-                  className="text-xs bg-green-600 hover:bg-green-500 px-2 py-1 rounded"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await handleNotificationApproval(notification._id);
-                  }}
-                >
-                  Approuver
-                </button>
-                <button
-                  className="text-xs bg-red-600 hover:bg-red-500 px-2 py-1 rounded"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await handleNotificationRejection(notification._id);
-                  }}
-                >
-                  Rejeter
-                </button>
-              </div>
-            )}
-            {notification.type === 'candidate_registration' && (
-              <div className="mt-2 flex gap-2 justify-end">
-                <button
-                  className="text-xs bg-green-600 hover:bg-green-500 px-2 py-1 rounded"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await handleNotificationApproval(notification._id);
-                  }}
-                >
-                  Approuver
-                </button>
-                <button
-                  className="text-xs bg-red-600 hover:bg-red-500 px-2 py-1 rounded"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await handleNotificationRejection(notification._id);
-                  }}
-                >
-                  Rejeter
-                </button>
-              </div>
-            )}
-            {notification.type === 'company_registration' && (
-              <div className="mt-2 flex gap-2 justify-end">
-                <button
-                  className="text-xs bg-green-600 hover:bg-green-500 px-2 py-1 rounded"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await handleNotificationApproval(notification._id);
-                  }}
-                >
-                  Approuver
-                </button>
-                <button
-                  className="text-xs bg-red-600 hover:bg-red-500 px-2 py-1 rounded"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await handleNotificationRejection(notification._id);
-                  }}
-                >
-                  Rejeter
-                </button>
-              </div>
-            )}
-          </div>
-        ))
-    ) : (
-      <p className="px-4 py-3 text-sm text-gray-400">Aucune notification</p>
-    )}
-  </div>
-)}
+                
+                {/* Notification dropdown - Add className for click outside handler */}
+                {showNotifications && (
+                  <div className="notification-dropdown absolute right-0 mt-2 w-80 bg-gray-800 rounded-lg shadow-lg border border-gray-700 py-2 z-50">
+                    <div className="flex justify-between items-center px-4 py-2 border-b border-gray-700">
+                      <h3 className="text-sm font-semibold">Notifications en attente</h3>
+                      <div className="flex items-center gap-2">
+                        {isRefreshing && (
+                          <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-b-2 border-purple-500"></div>
+                        )}
+                        <span className="text-xs text-gray-400">
+                          {new Date(lastRefresh).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {notifications.length > 0 ? (
+                      <div className="max-h-96 overflow-y-auto">
+                        {notifications.map(notification => (
+                          <div
+                            key={notification._id}
+                            className="px-4 py-3 hover:bg-gray-700 border-b border-gray-700 last:border-b-0 bg-gray-700/30"
+                          >
+                            <div 
+                              className="cursor-pointer"
+                              onClick={async () => {
+                                // Handle notification click (open user details)
+                                if (notification.type === 'new_candidate' || notification.type === 'candidate_registration') {
+                                  const candidateUser = users.find(
+                                    user => user._id === notification.candidate_id && user.type === 'candidate'
+                                  );
+                                  if (candidateUser) {
+                                    setSelectedUser(candidateUser);
+                                    setIsUserDetailsOpen(true);
+                                  }
+                                }
+                                else if (notification.type === 'company_registration') {
+                                  const companyUser = users.find(
+                                    user => user._id === notification.company_id && user.type === 'company'
+                                  );
+                                  if (companyUser) {
+                                    setSelectedUser(companyUser);
+                                    setIsUserDetailsOpen(true);
+                                  }
+                                }
+                              }}
+                            >
+                              <div className="flex items-start gap-2">
+                                <div className="w-2 h-2 bg-purple-500 rounded-full mt-2 flex-shrink-0"></div>
+                                <div className="flex-1">
+                                  <p className="text-sm text-white">{notification.text}</p>
+                                  <p className="text-xs text-gray-400 mt-1">
+                                    {new Date(notification.time).toLocaleString()
+                                    }
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Show approve/reject buttons for registration notifications */}
+                            {(notification.type === 'new_candidate' || 
+                              notification.type === 'candidate_registration' || 
+                              notification.type === 'company_registration') && (
+                              <div className="mt-3 flex gap-2 justify-end">
+                                <button
+                                  className="text-xs bg-green-600 hover:bg-green-500 px-3 py-1.5 rounded transition-colors font-medium"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    await handleNotificationApproval(notification._id);
+                                  }}
+                                >
+                                  ✓ Approuver
+                                </button>
+                                
+                                <button
+                                  className="text-xs bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded transition-colors font-medium"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    await handleNotificationRejection(notification._id);
+                                  }}
+                                >
+                                  ✗ Rejeter
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="px-4 py-8 text-center">
+                        <div className="text-green-400 mb-2">
+                          <CheckCircle className="h-8 w-8 mx-auto" />
+                        </div>
+                        <p className="text-sm text-gray-400">Aucune notification en attente</p>
+                        <p className="text-xs text-gray-500 mt-1">Toutes les notifications ont été traitées</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Profile Menu */}
@@ -553,7 +612,7 @@ const AdminDashboard = () => {
                 </button>
 
                 {showProfileMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-2 z-50">
+                  <div className="profile-menu absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-2 z-50">
                     <div className="border-t border-gray-700 my-1"></div>
                     <button
                       onClick={handleLogout}
@@ -606,7 +665,7 @@ const AdminDashboard = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
           <div className="bg-gray-800 p-6 rounded-lg hover:bg-gray-800/80 transition-colors">
             <div className="flex items-center justify-between">
               <div>
@@ -643,14 +702,26 @@ const AdminDashboard = () => {
           <div className="bg-gray-800 p-6 rounded-lg hover:bg-gray-800/80 transition-colors">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-400">Utilisateurs bloqués</p>
-                <h3 className="text-2xl font-bold mt-1 text-white">{users.filter(user => user.status === 'blocked').length}</h3>
+                <p className="text-sm text-gray-400">En attente</p>
+                <h3 className="text-2xl font-bold mt-1 text-white">{users.filter(user => user.status === 'pending').length}</h3>
               </div>
-              <div className="p-3 bg-purple-500/20 rounded-lg">
-                <Ban className="h-5 w-5 text-purple-400" />
+              <div className="p-3 bg-orange-500/20 rounded-lg">
+                <Ban className="h-5 w-5 text-orange-400" />
               </div>
             </div>
           </div>
+          {/* Add this as a new statistics card after the "En attente" card: */}
+          <div className="bg-gray-800 p-6 rounded-lg hover:bg-gray-800/80 transition-colors">
+  <div className="flex items-center justify-between">
+    <div>
+      <p className="text-sm text-gray-400">Bloqués</p>
+      <h3 className="text-2xl font-bold mt-1 text-white">{users.filter(user => user.status === 'blocked').length}</h3>
+    </div>
+    <div className="p-3 bg-red-500/20 rounded-lg">
+      <Ban className="h-5 w-5 text-red-400" />
+    </div>
+  </div>
+</div>
         </div>
 
         {/* Users Table */}
@@ -689,6 +760,7 @@ const AdminDashboard = () => {
               >
                 <option value="all">Tous les statuts</option>
                 <option value="active">Actif</option>
+                <option value="pending">En attente</option>
                 <option value="blocked">Bloqué</option>
               </select>
             </div>
@@ -754,17 +826,21 @@ const AdminDashboard = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 py-1 text-xs rounded-full ${
                           user.status === 'active'
-                            ? 'bg-green-500/20 text-green-400'
+                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                            : user.status === 'pending'
+                            ? 'bg-orange-400/20 text-orange-300 border border-orange-400/30'
                             : user.status === 'blocked'
-                            ? 'bg-red-500/20 text-red-400'
-                            : 'bg-yellow-500/20 text-yellow-400'
+                            ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            : 'bg-orange-600/20 text-orange-500 border border-orange-600/30' // For 'inactive' or other non-active states
                         }`}>
                           {user.status === 'active'
                             ? 'Actif'
+                            : user.status === 'pending'
+                            ? 'En attente'
                             : user.status === 'blocked'
                             ? 'Bloqué'
-                            : 'En attente'}
-                          {user.type === 'company' && user.verified && ' (Vérifiée)'}
+                            : 'Non-actif'}
+                          {user.type === 'company' && user.verified && user.status === 'active' && ' (Vérifiée)'}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-400">
@@ -920,10 +996,22 @@ const AdminDashboard = () => {
                     {selectedUser.type === 'candidate' ? 'Candidat' : 'Entreprise'}
                   </span>
                   <span className={`px-2 py-1 text-xs rounded-full ${
-                    selectedUser.status === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                    selectedUser.status === 'active'
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                      : selectedUser.status === 'pending'
+                      ? 'bg-orange-400/20 text-orange-300 border border-orange-400/30'
+                      : selectedUser.status === 'blocked'
+                      ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      : 'bg-orange-600/20 text-orange-500 border border-orange-600/30'
                   }`}>
-                    {selectedUser.status === 'active' ? 'Actif' : 'Bloqué'}
-                    {selectedUser.type === 'company' && selectedUser.verified && ' (Vérifiée)'}
+                    {selectedUser.status === 'active'
+                      ? 'Actif'
+                      : selectedUser.status === 'pending'
+                      ? 'En attente'
+                      : selectedUser.status === 'blocked'
+                      ? 'Bloqué'
+                      : 'Non-actif'}
+                    {selectedUser.type === 'company' && selectedUser.verified && selectedUser.status === 'active' && ' (Vérifiée)'}
                   </span>
                 </div>
               </div>
@@ -936,10 +1024,24 @@ const AdminDashboard = () => {
               </div>
               <div>
                 <p className="text-sm text-gray-400">Statut du compte</p>
-                <p className="text-white capitalize">
-                  {selectedUser.status === 'active' ? 'Actif' : 'Bloqué'}
-                  {selectedUser.type === 'company' && selectedUser.verified && ' (Vérifiée)'}
-                </p>
+                <p className={`font-medium ${
+    selectedUser.status === 'active'
+      ? 'text-green-400'
+      : selectedUser.status === 'pending'
+      ? 'text-orange-300'
+      : selectedUser.status === 'blocked'
+      ? 'text-red-400'
+      : 'text-orange-500'
+  }`}>
+    {selectedUser.status === 'active'
+      ? 'Actif'
+      : selectedUser.status === 'pending'
+      ? 'En attente'
+      : selectedUser.status === 'blocked'
+      ? 'Bloqué'
+      : 'Non-actif'}
+    {selectedUser.type === 'company' && selectedUser.verified && selectedUser.status === 'active' && ' (Vérifiée)'}
+  </p>
               </div>
               <div>
                 <p className="text-sm text-gray-400">Date d'inscription</p>
@@ -1053,7 +1155,7 @@ const AdminDashboard = () => {
                     <button
                       onClick={async () => {
                         const success = await handleCandidateApproval(selectedUser._id);
-                        if (success) setIsUserDetailsOpen(false);
+                        if (success) setIsUserDetailsOpen(false); // Close modal after action
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 transition flex items-center gap-2"
                     >
@@ -1065,7 +1167,7 @@ const AdminDashboard = () => {
                     <button
                       onClick={async () => {
                         const success = await handleCandidateStatus(selectedUser._id, 'block');
-                        if (success) setIsUserDetailsOpen(false);
+                        if (success) setIsUserDetailsOpen(false); // Close modal after action
                       }}
                       className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition flex items-center gap-2"
                     >
@@ -1074,7 +1176,7 @@ const AdminDashboard = () => {
                     </button>
                   )}
                   <button
-                    onClick={() => handleDeleteUser(selectedUser._id)}
+                    onClick={() => openDeleteConfirm(selectedUser)}
                     className="px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 transition flex items-center gap-2"
                   >
                     <X className="h-4 w-4" />
@@ -1153,6 +1255,91 @@ const AdminDashboard = () => {
                 className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition"
               >
                 Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Confirmation Delete Modal */}
+      {showDeleteConfirm && userToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60] p-4">
+          <div className="relative bg-gray-800 rounded-lg border-2 border-red-500 p-6 max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-red-400 flex items-center gap-2">
+                <X className="h-5 w-5" />
+                Confirmer la suppression
+              </h3>
+              <button 
+                onClick={closeDeleteConfirm}
+                className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-gray-700 transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                    <X className="h-5 w-5 text-red-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-white">{userToDelete.name}</h4>
+                    <p className="text-sm text-gray-400">{userToDelete.email}</p>
+                  </div>
+                </div>
+                
+                <div className="text-sm text-gray-300">
+                  <p className="mb-2">
+                    <span className="font-medium">Type:</span> {userToDelete.type === 'candidate' ? 'Candidat' : 'Entreprise'}
+                  </p>
+                  <p className="mb-2">
+                    <span className="font-medium">Statut:</span> {userToDelete.status}
+                  </p>
+                  <p>
+                    <span className="font-medium">Inscrit le:</span> {formatDate(userToDelete.created_at)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg p-4">
+                <h4 className="font-semibold text-yellow-400 mb-2 flex items-center gap-2">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-1.962-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  Attention !
+                </h4>
+                <p className="text-sm text-yellow-200">
+                  Cette action est <strong>irréversible</strong>. Toutes les données associées à cet utilisateur seront définitivement supprimées.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={closeDeleteConfirm}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              
+              <button
+                onClick={() => handleDeleteUser(userToDelete._id)}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                    Suppression...
+                  </>
+                ) : (
+                  <>
+                    <X className="h-4 w-4" />
+                    Supprimer définitivement
+                  </>
+                )}
               </button>
             </div>
           </div>

@@ -2,13 +2,15 @@
 Candidate routes for GrowCoach application
 """
 from flask import Blueprint, jsonify, request, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 from bson import ObjectId
 from datetime import datetime
 import logging
 import json
 import os
+import re
 
 from app import mongo, limiter
 from app.models import Candidate
@@ -439,3 +441,168 @@ def unsave_job():
     except Exception as e:
         logging.error(f"Error unsaving job: {str(e)}")
         return error_response("Erreur lors du retrait.", 500)
+
+@candidate_bp.route('/signup', methods=['POST'])
+def candidate_signup():
+    try:
+        # --- Strong backend validation ---
+        data = request.form
+
+        required_fields = ['first_name', 'last_name', 'email', 'password', 'confirm_password']
+        for field in required_fields:
+            if not data.get(field):
+                return error_response(f"{field.replace('_', ' ').capitalize()} est requis(e)", 400)
+
+        # Email format
+        email = data['email']
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            return error_response("Format d'e-mail invalide", 400)
+
+        # Password strength
+        password = data['password']
+        if len(password) < 8:
+            return error_response("Le mot de passe doit contenir au moins 8 caractères.", 400)
+        if password != data['confirm_password']:
+            return error_response("Les mots de passe ne correspondent pas.", 400)
+
+        # Unique email check (candidates & companies)
+        if mongo.db.candidates.find_one({'email': email}) or mongo.db.companies.find_one({'email': email}):
+            return error_response("E-mail déjà enregistré.", 400)
+
+        # Check if files are present
+        if 'avatar' not in request.files or 'resume' not in request.files:
+            return error_response("Les fichiers d'avatar et de CV sont requis.", 400)
+        avatar = request.files['avatar']
+        resume = request.files['resume']
+
+        # Validate files
+        if avatar.filename == '' or resume.filename == '':
+            return error_response("Aucun fichier sélectionné.", 400)
+        if not (allowed_file(avatar.filename) and allowed_file(resume.filename)):
+            return error_response("Type de fichier invalide.", 400)
+
+        # Process file uploads
+        avatar_filename = secure_filename(f"avatar_{datetime.now().strftime('%Y%m%d%H%M%S')}_{avatar.filename}")
+        resume_filename = secure_filename(f"resume_{datetime.now().strftime('%Y%m%d%H%M%S')}_{resume.filename}")
+        
+        upload_folder = os.path.join(os.getcwd(), 'uploads')
+        os.makedirs(upload_folder, exist_ok=True)
+        
+        avatar.save(os.path.join(upload_folder, avatar_filename))
+        resume.save(os.path.join(upload_folder, resume_filename))
+
+        # Create candidate document with status field
+        candidate = {
+            'first_name': data['first_name'],
+            'last_name': data['last_name'],
+            'email': data['email'],
+            'password': generate_password_hash(data['password']),
+            'phone': data.get('phone', ''),
+            'location': data.get('location', ''),
+            'bio': data.get('bio', ''),
+            'skills': data.get('skills', '').split(',') if data.get('skills') else [],
+            'terms_accepted': True,
+            'avatar': avatar_filename,
+            'resume': resume_filename,
+            'status': 'pending',
+            'created_at': datetime.now(),
+            'updated_at': datetime.now()
+        }
+
+        # Handle GrowCoach formation fields
+        has_growcoach_formation = data.get('has_growcoach_formation', 'false').lower() == 'true'
+        growcoach_formations = request.form.getlist('growcoach_formation') if has_growcoach_formation else []
+
+        candidate['has_growcoach_formation'] = has_growcoach_formation
+        if has_growcoach_formation and growcoach_formations:
+            candidate['growcoach_formation'] = growcoach_formations
+
+        # Process education
+        education = []
+        education_count = int(data.get('education_count', 0))
+        for i in range(education_count):
+            edu = {
+                'school': data.get(f'education[{i}][school]', ''),
+                'degree': data.get(f'education[{i}][degree]', ''),
+                'start_date': data.get(f'education[{i}][start_date]', ''),
+                'end_date': data.get(f'education[{i}][end_date]', ''),
+                'description': data.get(f'education[{i}][description]', '')
+            }
+            education.append(edu)
+        candidate['education'] = education
+
+        # Process experience
+        experience = []
+        experience_count = int(data.get('experience_count', 0))
+        for i in range(experience_count):
+            exp = {
+                'title': data.get(f'experience[{i}][title]', ''),
+                'company': data.get(f'experience[{i}][company]', ''),
+                'start_date': data.get(f'experience[{i}][start_date]', ''),
+                'end_date': data.get(f'experience[{i}][end_date]', ''),
+                'description': data.get(f'experience[{i}][description]', '')
+            }
+            experience.append(exp)
+        candidate['experience'] = experience
+
+        # Process professional formation
+        professional_formation = []
+        professional_formation_count = int(data.get('professional_formation_count', 0))
+        for i in range(professional_formation_count):
+            pf = {
+                'title': data.get(f'professional_formation[{i}][title]', ''),
+                'institution': data.get(f'professional_formation[{i}][institution]', ''),
+                'start_date': data.get(f'professional_formation[{i}][start_date]', ''),
+                'end_date': data.get(f'professional_formation[{i}][end_date]', ''),
+                'description': data.get(f'professional_formation[{i}][description]', '')
+            }
+            professional_formation.append(pf)
+        candidate['professional_formation'] = professional_formation
+
+        # Process projects
+        projects = []
+        projects_count = int(data.get('projects_count', 0))
+        for i in range(projects_count):
+            project = {
+                'name': data.get(f'projects[{i}][name]', ''),
+                'description': data.get(f'projects[{i}][description]', ''),
+                'link': data.get(f'projects[{i}][link]', '')
+            }
+            projects.append(project)
+        candidate['projects'] = projects
+
+        # Insert into database
+        result = mongo.db.candidates.insert_one(candidate)
+
+        # Generate JWT token for the new candidate
+        access_token = create_access_token(
+            identity=str(result.inserted_id),
+            additional_claims={"user_type": "candidate"}
+        )
+
+        # Create admin notification
+        notification = {
+            "text": f"Nouvelle inscription de candidat: {candidate['first_name']} {candidate['last_name']}",
+            "time": datetime.utcnow(),
+            "unread": True,
+            "type": "candidate_registration",
+            "candidate_id": str(result.inserted_id),
+            "candidate_name": f"{candidate['first_name']} {candidate['last_name']}"
+        }
+        mongo.db.admin_notifications.insert_one(notification)
+
+        return success_response("Candidat créé avec succès. Votre compte est en attente d'approbation.", {
+            "status": "pending",
+            "avatar_url": f"/uploads/{avatar_filename}",
+            "resume_url": f"/uploads/{resume_filename}",
+            "token": access_token,
+            "user_id": str(result.inserted_id),
+            "first_name": candidate['first_name'],
+            "last_name": candidate['last_name'],
+            "email": candidate['email'],
+            "user_type": "candidate"
+        }, 201)
+
+    except Exception as e:
+        print(f"Error in candidate_signup: {str(e)}")
+        return error_response("Une erreur inattendue s'est produite.", 500)
