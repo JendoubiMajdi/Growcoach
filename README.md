@@ -288,7 +288,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-For support, email majdi@esprit.tn or create an issue in the GitHub repository.
+For support, email majdi.jendoubi@esprit.tn or create an issue in the GitHub repository.
 
 ## 🔮 Future Enhancements
 
