@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Education, Experience, CandidateSignupData } from '../../types';
 import Footer from '../Footer';
 
+const API_BASE_URL = 'http://localhost:5000';
+
 // Add these types if not present
 export interface ProfessionalFormation {
   title: string;
@@ -394,7 +396,7 @@ const submitFinalForm = async () => {
     console.log('Submitting registration data to /candidate/signup');
 
     // Use the new candidate signup endpoint
-    const response = await fetch('http://localhost:5000/candidate/signup', {
+    const response = await fetch(`${API_BASE_URL}/candidate/signup`, {
       method: 'POST',
       body: formDataToSend, // Send as FormData, not JSON
     });

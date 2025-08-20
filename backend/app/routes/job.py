@@ -2,11 +2,22 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from bson import ObjectId
 from datetime import datetime
+from dateutil.parser import parse
 import logging
 
 from app import mongo
 
 job_bp = Blueprint('job', __name__)
+
+def format_created_at(value):
+    if not value:
+        return ''
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d')
+    try:
+        return parse(str(value)).strftime('%Y-%m-%d')
+    except Exception:
+        return str(value)
 
 @job_bp.route('/', methods=['GET'])
 def get_all_jobs_public():
@@ -23,7 +34,6 @@ def get_all_jobs_public():
                         'company_logo': company.get('logo', ''),
                         'company_location': company.get('location', '')
                     }
-            
             jobs.append({
                 '_id': str(job.get('_id')),
                 'job_title': job.get('job_title', ''),
@@ -32,7 +42,7 @@ def get_all_jobs_public():
                 'required_experience': job.get('required_experience', ''),
                 'required_skills': job.get('required_skills', []),
                 'status': job.get('status', 'draft'),
-                'created_at': job.get('created_at').strftime('%Y-%m-%d') if job.get('created_at') else '',
+                'created_at': format_created_at(job.get('created_at')),
                 'company_id': str(job.get('company_id')) if job.get('company_id') else '',
                 'applicants': job.get('applicants', []),
                 **company_data  
@@ -65,5 +75,35 @@ def apply_to_job(job_id):
         )
         
         return jsonify({'message': 'Candidature envoyée avec succès.'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@job_bp.route('/create', methods=['POST'])
+@jwt_required()
+def create_job():
+    try:
+        data = request.get_json()
+        current_user = get_jwt_identity()
+        
+        required_fields = ['job_title', 'salary', 'looking_for_profile', 'required_experience', 'required_skills']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing field: {field}'}), 400
+        
+        job = {
+            'job_title': data['job_title'],
+            'salary': data['salary'],
+            'looking_for_profile': data['looking_for_profile'], 
+            'required_experience': data['required_experience'],
+            'required_skills': data['required_skills'],
+            'status': 'draft',
+            'created_at': datetime.utcnow(),  
+            'company_id': current_user['id'],
+            'applicants': []
+        }
+        
+        mongo.db.jobs.insert_one(job)
+        
+        return jsonify({'message': 'Job created successfully.'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500

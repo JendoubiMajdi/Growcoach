@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
 import Footer from '../Footer';
 
+const API_BASE_URL = 'http://localhost:5000';
+
 interface CandidateProfileData {
   first_name: string;
   last_name: string;
@@ -49,7 +51,7 @@ const CandidateProfile = () => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const response = await fetch('http://localhost:5000/candidate/profile', {
+        const response = await fetch(`${API_BASE_URL}/candidate/profile`, {
           method: 'GET',
           credentials: 'include',
           headers: {
@@ -81,7 +83,7 @@ const CandidateProfile = () => {
           
           setProfileData(initializedProfileData);
           if (profileData.avatar) {
-            setPreviewUrl(`http://localhost:5000/uploads/${profileData.avatar}`);
+            setPreviewUrl(`${API_BASE_URL}/uploads/${profileData.avatar}`);
           }
           // Initialize skills input
           if (profileData.skills && profileData.skills.length > 0) {
@@ -306,7 +308,7 @@ const CandidateProfile = () => {
         formData.append('professional_formation', JSON.stringify(profileData.professional_formation));
         formData.append('projects', JSON.stringify(profileData.projects));
 
-        response = await fetch('http://localhost:5000/candidate/update', {
+        response = await fetch(`${API_BASE_URL}/candidate/update`, {
           method: 'PUT',
           credentials: 'include',
           headers: {
@@ -326,7 +328,7 @@ const CandidateProfile = () => {
           _id: undefined
         };
 
-        response = await fetch('http://localhost:5000/candidate/update', {
+        response = await fetch(`${API_BASE_URL}/candidate/update`, {
           method: 'PUT',
           credentials: 'include',
           headers: {
@@ -347,7 +349,7 @@ const CandidateProfile = () => {
       const updatedData = responseData.data || responseData;
       setProfileData(updatedData);
       if (updatedData.avatar) {
-        setPreviewUrl(`http://localhost:5000/uploads/${updatedData.avatar}`);
+        setPreviewUrl(`${API_BASE_URL}/uploads/${updatedData.avatar}`);
       }
       setSuccessMessage('Profil mis à jour avec succès !');
       setTimeout(() => setSuccessMessage(''), 3000);
@@ -525,7 +527,7 @@ const CandidateProfile = () => {
               <div className="space-y-2">
                 {profileData.resume ? (
                   <a
-                    href={`http://localhost:5000/uploads/${profileData.resume}`}
+                    href={`${API_BASE_URL}/uploads/${profileData.resume}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-purple-400 underline block"

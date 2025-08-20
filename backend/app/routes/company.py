@@ -10,6 +10,7 @@ from datetime import datetime
 import logging
 import os
 import re
+from dateutil.parser import parse
 
 from app import mongo
 from app.utils.helpers import success_response, error_response
@@ -45,6 +46,16 @@ def sanitize_input(data):
         return data.strip()
     else:
         return data
+
+def format_created_at(value):
+    if not value:
+        return ''
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d')
+    try:
+        return parse(str(value)).strftime('%Y-%m-%d')
+    except Exception:
+        return str(value)
 
 company_bp = Blueprint('company', __name__)
 
@@ -269,7 +280,7 @@ def get_company_jobs():
                 'required_experience': job.get('required_experience', ''),
                 'required_skills': job.get('required_skills', []),
                 'status': job.get('status', 'active'),
-                'created_at': job.get('created_at').strftime('%Y-%m-%d') if job.get('created_at') else '',
+                'created_at': format_created_at(job.get('created_at')),
                 'applicants': job.get('applicants', []),
                 'applicants_count': len(job.get('applicants', []))
             })
@@ -316,7 +327,8 @@ def create_job():
             'required_experience': data['required_experience'],
             'required_skills': required_skills,
             'status': 'active',
-            'applicants': []
+            'applicants': [],
+            'created_at': datetime.utcnow()
         }
 
         job = mongo.db.jobs.insert_one(job_data)

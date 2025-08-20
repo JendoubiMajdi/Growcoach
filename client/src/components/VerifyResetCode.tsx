@@ -3,6 +3,8 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { ArrowLeft, Shield, RefreshCw } from 'lucide-react';
 import Footer from './Footer';
 
+const API_BASE_URL = 'http://localhost:5000';
+
 interface VerifyCodeResponse {
   success: boolean;
   message: string;
@@ -100,7 +102,7 @@ const VerifyResetCode: React.FC = () => {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:5000/verify-reset-code', {
+      const response = await fetch(`${API_BASE_URL}/verify-reset-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,7 +138,7 @@ const VerifyResetCode: React.FC = () => {
 
   const handleResendCode = async () => {
     try {
-      const response = await fetch('http://localhost:5000/forgot-password', {
+      const response = await fetch(`${API_BASE_URL}/forgot-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -161,7 +163,7 @@ const VerifyResetCode: React.FC = () => {
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
           <div className="flex items-center justify-center mt-8 space-x-3">
             <img
-              src="http://localhost:5000/uploads/1.png"
+              src={`${API_BASE_URL}/uploads/1.png`}
               alt="Growcoach Logo"
               className="h-14 w-14 object-contain"
               style={{ borderRadius: '4px' }}

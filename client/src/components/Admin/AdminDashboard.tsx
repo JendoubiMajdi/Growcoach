@@ -67,7 +67,8 @@ const AdminDashboard = () => {
       name: user.name || 'Inconnu',
       email: user.email || 'Pas d\'email',
       type: ['candidate', 'company'].includes(user.type) ? user.type : 'candidate',
-      status: ['active', 'blocked', 'pending'].includes(user.status) ? user.status : 'pending', // Default to pending
+      status: ['active', 'blocked', 'pending'].includes(user.status) ? user.status : 'pending' // Default to pending
+      ,
       verified: user.type === 'company' ? !!user.verified : undefined,
       created_at: user.created_at || new Date().toISOString(),
       CV: user.CV,
@@ -840,7 +841,10 @@ const AdminDashboard = () => {
                             : user.status === 'blocked'
                             ? 'Bloqué'
                             : 'Non-actif'}
-                          {user.type === 'company' && user.verified && user.status === 'active' && ' (Vérifiée)'}
+                          {/* Show verification status for active companies */}
+                          {user.type === 'company' && user.status === 'active' && (
+                            user.verified ? ' (Vérifiée)' : ' (Non vérifiée)'
+                          )}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-400">
@@ -1011,7 +1015,10 @@ const AdminDashboard = () => {
                       : selectedUser.status === 'blocked'
                       ? 'Bloqué'
                       : 'Non-actif'}
-                    {selectedUser.type === 'company' && selectedUser.verified && selectedUser.status === 'active' && ' (Vérifiée)'}
+                    {/* Show verification status for active companies */}
+                    {selectedUser.type === 'company' && selectedUser.status === 'active' && (
+                      selectedUser.verified ? ' (Vérifiée)' : ' (Non vérifiée)'
+                    )}
                   </span>
                 </div>
               </div>
@@ -1040,7 +1047,10 @@ const AdminDashboard = () => {
       : selectedUser.status === 'blocked'
       ? 'Bloqué'
       : 'Non-actif'}
-    {selectedUser.type === 'company' && selectedUser.verified && selectedUser.status === 'active' && ' (Vérifiée)'}
+    {/* Show verification status for active companies */}
+    {selectedUser.type === 'company' && selectedUser.status === 'active' && (
+      selectedUser.verified ? ' (Vérifiée)' : ' (Non vérifiée)'
+    )}
   </p>
               </div>
               <div>
@@ -1203,13 +1213,13 @@ const AdminDashboard = () => {
                   {selectedUser.status === 'pending' && (
                     <button
                       onClick={async () => {
-                        const success = await handleCompanyStatus(selectedUser._id, 'unblock');
+                        const success = await handleCompanyStatus(selectedUser._id, 'verify');
                         if (success) setIsUserDetailsOpen(false);
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 transition flex items-center gap-2"
                     >
                       <CheckCircle className="h-4 w-4" />
-                      Activer
+                      Activer et Vérifier
                     </button>
                   )}
                   {selectedUser.status === 'active' && (
@@ -1224,7 +1234,7 @@ const AdminDashboard = () => {
                       Bloquer
                     </button>
                   )}
-                  {selectedUser.verified ? (
+                  {selectedUser.status === 'active' && selectedUser.verified && (
                     <button
                       onClick={async () => {
                         const success = await handleCompanyStatus(selectedUser._id, 'unverify');
@@ -1233,9 +1243,10 @@ const AdminDashboard = () => {
                       className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-500 transition flex items-center gap-2"
                     >
                       <Ban className="h-4 w-4" />
-                      Retirer l'accès
+                      Retirer la vérification
                     </button>
-                  ) : (
+                  )}
+                  {selectedUser.status === 'active' && !selectedUser.verified && (
                     <button
                       onClick={async () => {
                         const success = await handleCompanyStatus(selectedUser._id, 'verify');
@@ -1249,13 +1260,6 @@ const AdminDashboard = () => {
                   )}
                 </>
               )}
-
-              <button
-                onClick={() => setIsUserDetailsOpen(false)}
-                className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition"
-              >
-                Fermer
-              </button>
             </div>
           </div>
         </div>

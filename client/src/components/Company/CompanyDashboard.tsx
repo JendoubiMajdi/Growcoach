@@ -5,6 +5,7 @@ import { JobPost, CompanyInfo, SimpleCandidate, JobFormData } from '../../types'
 import Footer from '../Footer';
 import ResumeViewer from './ResumeViewer'; 
 
+const API_BASE_URL = 'http://localhost:5000';
 
 const ApplicantsModal = ({ 
   applicants, 
@@ -19,10 +20,15 @@ const ApplicantsModal = ({
 }) => {
   const [showVerificationRequest, setShowVerificationRequest] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSendVerificationRequest = async () => {
+    setIsLoading(true);
+    setError('');
+    
     try {
-      const response = await fetch('http://localhost:5000/request-verification', {
+      const response = await fetch(`${API_BASE_URL}/company/request-verification`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -32,18 +38,30 @@ const ApplicantsModal = ({
 
       if (response.ok) {
         setRequestSent(true);
-        setTimeout(() => setShowVerificationRequest(false), 2000);
+        setTimeout(() => {
+          setShowVerificationRequest(false);
+          setRequestSent(false);
+          onClose();
+        }, 2000);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || 'Erreur lors de l\'envoi de la demande');
       }
     } catch (error) {
-      console.error('Erreur lors de l’envoi de la demande de vérification :', error);
+      console.error('Erreur lors de l\'envoi de la demande de vérification :', error);
+      setError('Erreur de connexion. Veuillez réessayer.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!companyVerified) {
+    if (!companyVerified && !verificationPending && !requestSent) {
       setShowVerificationRequest(true);
+    } else {
+      setShowVerificationRequest(false);
     }
-  }, [companyVerified]);
+  }, [companyVerified, verificationPending, requestSent]);
 
   if (showVerificationRequest) {
     return (
@@ -60,29 +78,98 @@ const ApplicantsModal = ({
               <X className="h-5 w-5" />
             </button>
           </div>
+          
           <div className="mb-6">
-            {(verificationPending || requestSent) ? (
-              <p className="text-green-400">Demande de vérification envoyée avec succès !</p>
+            {requestSent ? (
+              <div className="text-center">
+                <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <h4 className="text-lg font-semibold text-green-400 mb-2">
+                  Demande envoyée avec succès !
+                </h4>
+                <p className="text-gray-300">
+                  Votre demande de vérification a été envoyée à l'administrateur. 
+                  Vous recevrez une notification une fois votre compte vérifié.
+                </p>
+                <p className="text-sm text-gray-400 mt-2">
+                  Fermeture automatique dans 2 secondes...
+                </p>
+              </div>
+            ) : verificationPending ? (
+              <div className="text-center">
+                <div className="w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h4 className="text-lg font-semibold text-yellow-400 mb-2">
+                  Demande en cours de traitement
+                </h4>
+                <p className="text-gray-300">
+                  Votre demande de vérification est en cours de traitement par l'administrateur.
+                  Vous ne pouvez pas consulter les CV en attendant l'approbation.
+                </p>
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={onClose}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition"
+                  >
+                    Fermer
+                  </button>
+                </div>
+              </div>
             ) : (
-              <p className="text-gray-300">
-                Votre compte entreprise doit être vérifié avant que vous puissiez consulter les candidatures.
-                Souhaitez-vous demander une vérification auprès de l'administrateur ?
-              </p>
+              <div className="text-center">
+                <div className="w-16 h-16 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
+                <h4 className="text-lg font-semibold text-purple-300 mb-2">
+                  Vérification requise
+                </h4>
+                <p className="text-gray-300">
+                  Votre compte entreprise doit être vérifié avant que vous puissiez consulter les CV des candidats.
+                  Souhaitez-vous demander une vérification auprès de l'administrateur ?
+                </p>
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-4 p-3 bg-red-900/20 border border-red-500/50 rounded-lg">
+                <p className="text-red-400 text-sm">{error}</p>
+              </div>
             )}
           </div>
-          {!(verificationPending || requestSent) && (
+
+          {!requestSent && !verificationPending && (
             <div className="flex justify-end gap-3">
               <button
                 onClick={onClose}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition"
+                disabled={isLoading}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50"
               >
                 Annuler
               </button>
               <button
                 onClick={handleSendVerificationRequest}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition"
+                disabled={isLoading}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition disabled:opacity-50 flex items-center gap-2"
               >
-                Demander une vérification
+                {isLoading ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Envoi...
+                  </>
+                ) : (
+                  'Demander une vérification'
+                )}
               </button>
             </div>
           )}
@@ -91,71 +178,66 @@ const ApplicantsModal = ({
     );
   }
 
-return (
-  <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-    <div className="relative bg-gray-800 rounded-xl border border-[#6D28D9] w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col">
-      {/* Header */}
-      <div className="sticky top-0 bg-gray-800 border-b border-[#6D28D9] p-4 flex items-center justify-between z-10">
-        <h3 className="text-lg font-semibold text-white">Candidats pour ce poste</h3>
-        <button 
-          onClick={onClose}
-          className="text-[#8B5CF6] hover:text-white p-1 rounded-full hover:bg-[#6D28D9] transition"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-      
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 pb-2 scrollbar-thin scrollbar-thumb-[#8B5CF6] scrollbar-track-[#1E293B]">
-        {applicants.length > 0 ? (
-          <div className="divide-y divide-[#6D28D9]">
-            {applicants.map((applicant) => (
-              <div key={applicant.id} className="p-4 hover:bg-[#6D28D9]/10 transition-colors flex flex-col h-full rounded-lg bg-gray-800 border border-[#6D28D9]/30 relative">
-                <div className="flex items-center justify-between gap-3 flex-1 min-w-0">
-                  {/* User Info */}
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="bg-[#8B5CF6] text-white rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-                      {typeof applicant.lastName === 'string' ? applicant.lastName.charAt(0).toUpperCase() : ''}
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+      <div className="relative bg-gray-800 rounded-xl border border-[#6D28D9] w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col">
+        <div className="sticky top-0 bg-gray-800 border-b border-[#6D28D9] p-4 flex items-center justify-between z-10">
+          <h3 className="text-lg font-semibold text-white">Candidats pour ce poste</h3>
+          <button 
+            onClick={onClose}
+            className="text-[#8B5CF6] hover:text-white p-1 rounded-full hover:bg-[#6D28D9] transition"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto px-6 pb-2 scrollbar-thin scrollbar-thumb-[#8B5CF6] scrollbar-track-[#1E293B]">
+          {applicants.length > 0 ? (
+            <div className="divide-y divide-[#6D28D9]">
+              {applicants.map((applicant) => (
+                <div key={applicant.id} className="p-4 hover:bg-[#6D28D9]/10 transition-colors flex flex-col h-full rounded-lg bg-gray-800 border border-[#6D28D9]/30 relative">
+                  <div className="flex items-center justify-between gap-3 flex-1 min-w-0">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="bg-[#8B5CF6] text-white rounded-full w-10 h-10 flex items-center justify-center shrink-0">
+                        {typeof applicant.lastName === 'string' ? applicant.lastName.charAt(0).toUpperCase() : ''}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-medium text-white truncate">
+                          {applicant.firstName} {applicant.lastName}
+                        </h4>
+                        <p className="text-xs text-[#A78BFA] truncate">
+                          {applicant.email || 'Aucun email'}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <h4 className="font-medium text-white truncate">
-                        {applicant.firstName} {applicant.lastName}
-                      </h4>
-                      <p className="text-xs text-[#A78BFA] truncate">
-                        {applicant.email || 'Aucun email'}
-                      </p>
-                    </div>
+                    {applicant.resume_url && (
+                      <ResumeViewer
+                        resumeUrl={applicant.resume_url}
+                        adminCV={applicant.adminCV}
+                        companyVerified={companyVerified}
+                        verificationPending={verificationPending}
+                        buttonClassName="px-3 py-1.5 bg-[#6D28D9] text-white rounded-md hover:bg-[#7C3AED] transition flex items-center gap-1.5 text-sm font-medium"
+                      />
+                    )}
                   </div>
-                  {/* Resume Button at the top right */}
-                  {applicant.resume_url && (
-                    <ResumeViewer
-                      resumeUrl={applicant.resume_url}
-                      adminCV={applicant.adminCV}
-                      companyVerified={companyVerified}
-                      verificationPending={verificationPending}
-                      buttonClassName="px-3 py-1.5 bg-[#6D28D9] text-white rounded-md hover:bg-[#7C3AED] transition flex items-center gap-1.5 text-sm font-medium"
-                    />
-                  )}
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center p-8 text-center">
-            <Users className="h-10 w-10 text-[#8B5CF6] mb-3" />
-            <p className="text-[#A78BFA]">Aucun candidat pour le moment</p>
-            <p className="text-sm text-[#7C3AED] mt-1">Les candidats apparaîtront ici lorsqu'ils postuleront</p>
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center p-8 text-center">
+              <Users className="h-10 w-10 text-[#8B5CF6] mb-3" />
+              <p className="text-[#A78BFA]">Aucun candidat pour le moment</p>
+              <p className="text-sm text-[#7C3AED] mt-1">Les candidats apparaîtront ici lorsqu'ils postuleront</p>
+            </div>
+          )}
+        </div>
 
-      {/* Footer (optional) */}
-      <div className="sticky bottom-0 bg-gray-800 border-t border-[#6D28D9] p-3 text-center">
-        <p className="text-sm text-[#A78BFA]">{applicants.length} candidat{applicants.length !== 1 ? 's' : ''}</p>
+        <div className="sticky bottom-0 bg-gray-800 border-t border-[#6D28D9] p-3 text-center">
+          <p className="text-sm text-[#A78BFA]">{applicants.length} candidat{applicants.length !== 1 ? 's' : ''}</p>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
 };
 
 const CompanyDashboard = () => {
@@ -179,7 +261,6 @@ const CompanyDashboard = () => {
   const [showApplicantsModal, setShowApplicantsModal] = useState(false);
   const [selectedJobApplicants, setSelectedJobApplicants] = useState<SimpleCandidate[]>([]);
   
-  // Skills filter state
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState('');
   const [availableSkills, setAvailableSkills] = useState<string[]>([]);
@@ -196,7 +277,7 @@ const CompanyDashboard = () => {
   };
 
   const [jobPost, setJobPost] = useState<JobFormData>(defaultJobPost);
-  const [currentSkill, setCurrentSkill] = useState(''); // <-- add this
+  const [currentSkill, setCurrentSkill] = useState('');
   const [jobListings, setJobListings] = useState<JobPost[]>([]);
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null);
 
@@ -214,7 +295,7 @@ const CompanyDashboard = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:5000/company/candidates', {
+      const response = await fetch(`${API_BASE_URL}/company/candidates`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -232,11 +313,9 @@ const CompanyDashboard = () => {
       }
 
       const responseData = await response.json();
-      // Handle the new response format where candidates data might be nested under 'data'
       const candidatesData = responseData.data || responseData;
       setCandidates(candidatesData);
       
-      // Extract all unique skills from candidates for the filter
       const allSkills = new Set<string>();
       candidatesData.forEach((candidate: any) => {
         if (candidate.skills && Array.isArray(candidate.skills)) {
@@ -281,7 +360,6 @@ const CompanyDashboard = () => {
     return result || 'Moins de 1 mois';
   };
 
-  // Skills filter functions
   const handleAddSkillFilter = (skill: string) => {
     const normalizedSkill = skill.toLowerCase().trim();
     if (normalizedSkill && !selectedSkills.includes(normalizedSkill)) {
@@ -324,7 +402,7 @@ const CompanyDashboard = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:5000/company/profile', {
+      const response = await fetch(`${API_BASE_URL}/company/profile`, {
         method: 'GET',
         credentials: 'include',
         headers: {
@@ -343,16 +421,15 @@ const CompanyDashboard = () => {
       }
 
       const responseData = await response.json();
-      // Handle the new response format where profile data is nested under 'data'
       const profileData = responseData.data || responseData;
       
       if (profileData && profileData.logo) {
-        setCompanyInfo({ ...profileData, logo_url: `http://localhost:5000/uploads/${profileData.logo}` });
+        setCompanyInfo({ ...profileData, logo_url: `${API_BASE_URL}/uploads/${profileData.logo}` });
       } else {
         setCompanyInfo(profileData);
       }
     } catch (error) {
-      console.error('Erreur lors de la récupération du profil de l’entreprise :', error);
+      console.error("Erreur lors de la récupération du profil de l'entreprise :", error);
     } finally {
       setLoadingProfile(false);
     }
@@ -360,7 +437,7 @@ const CompanyDashboard = () => {
 
   const refreshToken = async () => {
     try {
-      const response = await fetch('http://localhost:5000/refresh-token', {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh-token`, {
         method: 'POST',
         credentials: 'include'
       });
@@ -387,7 +464,7 @@ const CompanyDashboard = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:5000/company/jobs', {
+      const response = await fetch(`${API_BASE_URL}/company/jobs`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -405,13 +482,10 @@ const CompanyDashboard = () => {
       }
 
       const responseData = await response.json();
-      // Handle the new response format where job listings might be nested under 'data'
       const jobsData = responseData.data || responseData;
-      
-      // Ensure we always have an array
       setJobListings(Array.isArray(jobsData) ? jobsData : []);
     } catch (error) {
-      console.error('Erreur lors de la récupération des offres d’emploi :', error);
+      console.error('Erreur lors de la récupération des offres d\'emploi :', error);
     } finally {
       setLoadingJobs(false);
     }
@@ -425,7 +499,7 @@ const CompanyDashboard = () => {
       const authToken = localStorage.getItem('authToken');
       if (!authToken) throw new Error('No authentication token found');
 
-      const response = await fetch('http://localhost:5000/auth/logout', {
+      const response = await fetch(`${API_BASE_URL}/auth/logout`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -467,12 +541,12 @@ const CompanyDashboard = () => {
       if (!authToken) throw new Error('No authentication token found');
 
       const endpoint = isEditingJob && editingJobId 
-        ? `http://localhost:5000/company/jobs/${editingJobId}`
-        : 'http://localhost:5000/company/jobs';
+        ? `${API_BASE_URL}/company/jobs/${editingJobId}`
+        : `${API_BASE_URL}/company/jobs`;
 
       const body = {
         ...jobPost,
-        required_skills: jobPost.required_skills, // <-- already an array now
+        required_skills: jobPost.required_skills,
       };
 
       const response = await fetch(endpoint, {
@@ -515,7 +589,7 @@ const CompanyDashboard = () => {
       if (!authToken) throw new Error('No authentication token found');
 
       const newStatus = currentStatus === 'active' ? 'closed' : 'active';
-      const response = await fetch(`http://localhost:5000/company/jobs/${jobId}/status`, {
+      const response = await fetch(`${API_BASE_URL}/company/jobs/${jobId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -528,7 +602,7 @@ const CompanyDashboard = () => {
       
       await fetchJobListings();
     } catch (error) {
-      console.error('Erreur lors de la mise à jour du statut de l’offre d’emploi :', error);
+      console.error("Erreur lors de la mise à jour du statut de l'offre d'emploi :", error);
     }
   };
 
@@ -555,7 +629,7 @@ const CompanyDashboard = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:5000/company/jobs/${job._id}/applicants`, {
+      const response = await fetch(`${API_BASE_URL}/company/jobs/${job._id}/applicants`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -565,7 +639,6 @@ const CompanyDashboard = () => {
 
       if (response.ok) {
         const responseData = await response.json();
-        // Handle the response format where applicants data is nested under 'data'
         const applicants = responseData.data || responseData;
         setSelectedJobApplicants(applicants);
         setShowApplicantsModal(true);
@@ -574,6 +647,27 @@ const CompanyDashboard = () => {
       }
     } catch (error) {
       console.error('Erreur lors de la récupération des candidats :', error);
+    }
+  };
+
+  const refreshVerificationStatus = async () => {
+    try {
+      const authToken = localStorage.getItem('authToken');
+      if (!authToken) return;
+
+      const response = await fetch(`${API_BASE_URL}/company/verification-status`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (response.ok) {
+        const responseData = await response.json();
+        const verificationData = responseData.data || responseData;
+        setVerificationPending(verificationData.pending);
+      }
+    } catch (error) {
+      console.error('Error fetching verification status:', error);
     }
   };
 
@@ -587,7 +681,6 @@ const CompanyDashboard = () => {
   });
 
   const filteredCandidates = candidates.filter(candidate => {
-    // Search query filter
     const searchLower = searchQuery.toLowerCase();
     const matchesSearch = !searchQuery || (
       candidate.firstName?.toLowerCase().includes(searchLower) ||
@@ -599,7 +692,6 @@ const CompanyDashboard = () => {
       (candidate.experience?.company && candidate.experience.company.toLowerCase().includes(searchLower))
     );
 
-    // Skills filter
     const matchesSkills = selectedSkills.length === 0 || (
       candidate.skills && 
       selectedSkills.every(selectedSkill => 
@@ -614,7 +706,7 @@ const CompanyDashboard = () => {
 
   useEffect(() => { 
     fetchCompanyProfile();
-    fetchJobListings(); // <-- Always fetch jobs on mount for stats
+    fetchJobListings();
   }, []);
 
   useEffect(() => {
@@ -622,31 +714,12 @@ const CompanyDashboard = () => {
       fetchCandidates();
     }
     if (activeTab === 'jobs') {
-      fetchJobListings(); // <-- Also fetch jobs when switching to jobs tab (for up-to-date list)
+      fetchJobListings();
     }
   }, [activeTab]);
 
   useEffect(() => {
-    const fetchVerificationStatus = async () => {
-      const authToken = localStorage.getItem('authToken');
-      if (!authToken) return;
-      try {
-        const response = await fetch('http://localhost:5000/company/verification-status', {
-          headers: {
-            'Authorization': `Bearer ${authToken}`
-          }
-        });
-        if (response.ok) {
-          const responseData = await response.json();
-          // Handle the new response format where verification status might be nested under 'data'
-          const verificationData = responseData.data || responseData;
-          setVerificationPending(verificationData.pending);
-        }
-      } catch (e) {
-        setVerificationPending(false);
-      }
-    };
-    fetchVerificationStatus();
+    refreshVerificationStatus();
   }, []);
 
   if (loadingProfile) {
@@ -665,7 +738,7 @@ const CompanyDashboard = () => {
             <div className="flex items-center justify-between">
               <Link to="/" className="flex items-center space-x-2">
                 <img
-                  src="http://localhost:5000/uploads/1.png"
+                  src={`${API_BASE_URL}/uploads/1.png`}
                   alt="Growcoach Logo"
                   className="h-10 w-10 object-contain"
                   style={{ borderRadius: '4px' }}
@@ -804,7 +877,6 @@ const CompanyDashboard = () => {
                             <h3 className="text-xl font-semibold">{candidate.firstName} {candidate.lastName}</h3>
                           </div>
                         </div>
-                        {/* Scrollable content */}
                         <div className="flex-1 overflow-y-auto px-6 pb-2 scrollbar-thin scrollbar-thumb-[#8b5cf6] scrollbar-track-[#1E293B]">
                           {candidate.education && (
                             <div className="mt-3">
@@ -870,7 +942,6 @@ const CompanyDashboard = () => {
                             </div>
                           </div>
                         </div>
-                        {/* Fixed button at the bottom */}
                         <div className="p-6 pt-2 mt-auto">
                           {candidate.resume_url && (
                             <ResumeViewer
@@ -917,11 +988,9 @@ const CompanyDashboard = () => {
                   </div>
                 </div>
 
-                {/* Skills Filter */}
                 <div className="bg-gray-800 p-4 rounded-lg shadow mt-6">
                   <h3 className="text-lg font-semibold mb-3 text-white">Filtrer par compétences</h3>
                   
-                  {/* Selected Skills Tags */}
                   {selectedSkills.length > 0 && (
                     <div className="mb-3">
                       <div className="flex flex-wrap gap-1 mb-2">
@@ -950,7 +1019,6 @@ const CompanyDashboard = () => {
                     </div>
                   )}
 
-                  {/* Skills Input */}
                   <div className="relative">
                     <input
                       type="text"
@@ -968,7 +1036,6 @@ const CompanyDashboard = () => {
                       }}
                     />
 
-                    {/* Skills Dropdown */}
                     {showSkillsDropdown && getFilteredSkillSuggestions().length > 0 && (
                       <div className="absolute z-20 w-full mt-1 bg-gray-700 border border-gray-600 rounded-lg shadow-lg max-h-32 overflow-y-auto">
                         {getFilteredSkillSuggestions().map((skill, index) => (
@@ -983,7 +1050,6 @@ const CompanyDashboard = () => {
                       </div>
                     )}
 
-                    {/* Add custom skill button */}
                     {skillInput.trim() && !getFilteredSkillSuggestions().includes(skillInput.toLowerCase().trim()) && (
                       <div className="absolute z-20 w-full mt-1 bg-gray-700 border border-gray-600 rounded-lg shadow-lg">
                         <button
@@ -996,7 +1062,6 @@ const CompanyDashboard = () => {
                     )}
                   </div>
 
-                  {/* Filter Summary */}
                   {selectedSkills.length > 0 && (
                     <div className="mt-2 text-xs text-gray-400">
                       {filteredCandidates.length} candidat{filteredCandidates.length > 1 ? 's' : ''} avec ces compétences

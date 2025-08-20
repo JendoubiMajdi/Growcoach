@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Upload, Save, Trash2 } from 'lucide-react';
 import Footer from '../Footer';
 
+const API_BASE_URL = 'http://localhost:5000';
+
 interface CompanyProfileData {
   company_name: string;
   email: string;
@@ -41,7 +43,7 @@ const CompanyProfile = () => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const response = await fetch('http://localhost:5000/company/profile', {
+        const response = await fetch(`${API_BASE_URL}/company/profile`, {
           method: 'GET',
           credentials: 'include',
           headers: {
@@ -59,7 +61,7 @@ const CompanyProfile = () => {
           if (profileData.logo_url) {
             setPreviewUrl(profileData.logo_url);
           } else if (profileData.logo) {
-            setPreviewUrl(`http://localhost:5000/uploads/${profileData.logo}`);
+            setPreviewUrl(`${API_BASE_URL}/uploads/${profileData.logo}`);
           }
         } else {
           throw new Error('Échec de la récupération des données du profil');
@@ -121,7 +123,7 @@ const CompanyProfile = () => {
         formData.append('logo', logoFile);
       }
 
-      const response = await fetch('http://localhost:5000/company/update', {
+      const response = await fetch(`${API_BASE_URL}/company/update`, {
         method: 'PUT',
         credentials: 'include',
         headers: {
@@ -143,7 +145,7 @@ const CompanyProfile = () => {
       if (updatedData.logo_url) {
         setPreviewUrl(updatedData.logo_url);
       } else if (updatedData.logo) {
-        setPreviewUrl(`http://localhost:5000/uploads/${updatedData.logo}`);
+        setPreviewUrl(`${API_BASE_URL}/uploads/${updatedData.logo}`);
       }
       setSuccessMessage('Profil mis à jour avec succès !');
       setTimeout(() => setSuccessMessage(''), 3000);

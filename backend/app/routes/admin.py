@@ -133,14 +133,20 @@ def manage_company_status(company_id):
         if not company:
             return jsonify({"error": "Entreprise non trouvée."}), 404
         
+        # Updated status mapping
         status_map = {
             'verify': {'verified': True, 'status': 'active'},
-            'unverify': {'verified': False, 'status': 'active'},
-            'block': {'status': 'blocked'},
-            'unblock': {'status': 'active'}
+            'unverify': {'verified': False, 'status': 'active'},  # Keep active but remove verification
+            'block': {'status': 'blocked', 'verified': False},    # Block and remove verification
+            'unblock': {'status': 'active'}                       # Unblock but keep current verification status
         }
         
         update_data = status_map[data['action']]
+        
+        # For unblock, preserve the current verification status
+        if data['action'] == 'unblock':
+            update_data['verified'] = company.get('verified', False)
+        
         update_data['updated_at'] = datetime.now()
         
         mongo.db.companies.update_one(

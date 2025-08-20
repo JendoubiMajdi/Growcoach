@@ -3,6 +3,8 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Lock, CheckCircle } from 'lucide-react';
 import Footer from './Footer';
 
+const API_BASE_URL = 'http://localhost:5000';
+
 interface ResetPasswordResponse {
   success: boolean;
   message: string;
@@ -82,7 +84,7 @@ const ResetPassword: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('http://localhost:5000/reset-password', {
+      const response = await fetch(`${API_BASE_URL}/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -168,7 +170,7 @@ const ResetPassword: React.FC = () => {
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
           <div className="flex items-center justify-center mt-8 space-x-3">
             <img
-              src="http://localhost:5000/uploads/1.png"
+              src={`${API_BASE_URL}/uploads/1.png`}
               alt="Growcoach Logo"
               className="h-14 w-14 object-contain"
               style={{ borderRadius: '4px' }}

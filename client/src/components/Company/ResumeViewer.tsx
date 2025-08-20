@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { FileText, X } from 'lucide-react';
 
+const API_BASE_URL = 'http://localhost:5000';
+
 interface ResumeViewerProps {
   resumeUrl: string;
   adminCV?: string;
@@ -115,7 +117,7 @@ const ResumeViewer: React.FC<ResumeViewerProps> = ({
                   <button
                     onClick={async () => {
                       try {
-                        const response = await fetch('http://localhost:5000/request-verification', {
+                        const response = await fetch(`${API_BASE_URL}/request-verification`, {
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json',

@@ -3,6 +3,8 @@ import { Search, Bell, LogOut, User, Briefcase, Building2, ChevronRight, Star, B
 import { useNavigate, Link } from 'react-router-dom';
 import Footer from '../Footer';
 
+const API_BASE_URL = 'http://localhost:5000';
+
 interface Education {
   degree: string;
   field_of_study?: string;
@@ -125,7 +127,7 @@ const CandidateDashboard = () => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const response = await fetch('http://localhost:5000/candidate/profile', {
+        const response = await fetch(`${API_BASE_URL}/candidate/profile`, {
           method: 'GET',
           credentials: 'include',
           headers: {
@@ -148,7 +150,7 @@ const CandidateDashboard = () => {
   const fetchSavedJobs = async () => {
     try {
       setIsRefreshingSavedJobs(true);
-      const response = await fetch('http://localhost:5000/candidate/saved-jobs', {
+      const response = await fetch(`${API_BASE_URL}/candidate/saved-jobs`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
         },
@@ -175,7 +177,7 @@ const CandidateDashboard = () => {
   useEffect(() => {
     const fetchSavedJobs = async () => {
       try {
-        const response = await fetch('http://localhost:5000/candidate/saved-jobs', {
+        const response = await fetch(`${API_BASE_URL}/candidate/saved-jobs`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
           },
@@ -200,7 +202,7 @@ const CandidateDashboard = () => {
       setIsLoading(true);
       setJobsError('');
       try {
-        const response = await fetch('http://localhost:5000/jobs', {
+        const response = await fetch(`${API_BASE_URL}/jobs`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -213,7 +215,7 @@ const CandidateDashboard = () => {
           return {
             ...job,
             matchPercentage,
-            company_logo: job.company?.company_logo ? `http://localhost:5000/uploads/${job.company.company_logo}` : "https://images.pexels.com/photos/3183150/pexels-photo-3183150.jpeg?auto=compress&cs=tinysrgb&w=100"
+            company_logo: job.company?.company_logo ? `${API_BASE_URL}/uploads/${job.company.company_logo}` : "https://images.pexels.com/photos/3183150/pexels-photo-3183150.jpeg?auto=compress&cs=tinysrgb&w=100"
           };
         });
         setJobs(jobsWithMatch);
@@ -251,7 +253,7 @@ const CandidateDashboard = () => {
   const handleLogout = async () => {
     try {
       // Call backend logout endpoint to blacklist the token
-      await fetch('http://localhost:5000/auth/logout', {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
@@ -283,7 +285,7 @@ const CandidateDashboard = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:5000/job/${jobId}/apply`, {
+      const response = await fetch(`${API_BASE_URL}/job/${jobId}/apply`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -324,7 +326,7 @@ const CandidateDashboard = () => {
     
     try {
       const endpoint = isSaved ? 'unsave-job' : 'save-job';
-      const response = await fetch(`http://localhost:5000/candidate/${endpoint}`, {
+      const response = await fetch(`${API_BASE_URL}/candidate/${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -404,7 +406,7 @@ const CandidateDashboard = () => {
           <div className="flex items-center justify-between">
             <Link to="/" className="flex items-center space-x-2">
               <img
-                src="http://localhost:5000/uploads/1.png"
+                src={`${API_BASE_URL}/uploads/1.png`}
                 alt="Growcoach Logo"
                 className="h-12 w-12 object-contain"
                 style={{ borderRadius: '4px' }}
@@ -421,7 +423,7 @@ const CandidateDashboard = () => {
               >
                 {profile?.avatar ? (
                   <img
-                    src={`http://localhost:5000/uploads/${profile.avatar}`}
+                    src={profile?.avatar ? `${API_BASE_URL}/uploads/${profile.avatar}` : "https://images.pexels.com/photos/3183150/pexels-photo-3183150.jpeg?auto=compress&cs=tinysrgb&w=100"}
                     alt="Profile"
                     className="w-8 h-8 rounded-full object-cover"
                     onError={(e) => {
@@ -568,12 +570,16 @@ const CandidateDashboard = () => {
                               {job.company_location || job.location}
                             </span>
                             <span>{job.salary || 'Salary not specified'}</span>
-                            <span>{job.posted || job.created_at ? formatDate(job.posted || job.created_at!) : ''}</span>
+                            {/* Add job posting date */}
+                            <span>
+                              {job.created_at ? `Publié le ${formatDate(job.created_at)}` : 'Date inconnue'}
+                            </span>
                           </div>
 
                           <div className="mt-4">
+                            {/* Fix: Add "En recherche de" before profile */}
                             <h4 className="font-medium text-white mb-2">En recherche de :</h4>
-                            <p className="text-gray-400">{job.looking_for_profile}</p>
+                            <p className="text-gray-400">{job.looking_for_profile || 'Non spécifié'}</p>
                           </div>
 
                           <div className="mt-4">
@@ -684,7 +690,7 @@ const CandidateDashboard = () => {
                 <div className="relative flex-shrink-0">
                   {profile?.avatar ? (
                     <img
-                      src={`http://localhost:5000/uploads/${profile.avatar}`}
+                      src={`${API_BASE_URL}/uploads/${profile.avatar}`}
                       alt="Profile"
                       className="w-16 h-16 rounded-full object-cover border-2 border-purple-500/30 hover:border-purple-500/70 transition-all"
                     />

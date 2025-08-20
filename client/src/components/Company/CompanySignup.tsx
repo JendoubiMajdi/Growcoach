@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Footer from '../Footer';
 
+const API_BASE_URL = 'http://localhost:5000';
+
 interface CompanySignupData {
   company_name: string;
   email: string;
@@ -134,7 +136,7 @@ const handleSubmit = async (e: React.FormEvent) => {
       formDataToSend.append('logo', formData.logo, formData.logo.name);
     }
 
-    const response = await fetch('http://localhost:5000/company/signup', {
+    const response = await fetch(`${API_BASE_URL}/company/signup`, {
       method: 'POST',
       body: formDataToSend,
     });
